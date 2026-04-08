@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'pages/home_page.dart';
+import 'pages/settings_page.dart';
+
 void main() {
   runApp(const WzxClawApp());
 }
@@ -10,30 +13,33 @@ class WzxClawApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const bgColor = Color(0xFF1A1A2E);
+    const surfaceColor = Color(0xFF16213E);
+    const accentColor = Color(0xFF6366F1);
+
     return MaterialApp(
-      title: 'wzxClaw Android',
+      title: 'wzxClaw',
       theme: ThemeData(
-        colorSchemeSeed: Colors.blue,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: bgColor,
+        primaryColor: accentColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: surfaceColor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        colorScheme: const ColorScheme.dark(
+          primary: accentColor,
+          secondary: accentColor,
+          surface: surfaceColor,
+        ),
         useMaterial3: true,
       ),
-      home: const _HomePage(),
-    );
-  }
-}
-
-/// Placeholder home page -- will be replaced in Plan 02.
-class _HomePage extends StatelessWidget {
-  const _HomePage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('wzxClaw Android'),
-      ),
-      body: const Center(
-        child: Text('wzxClaw Android'),
-      ),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const HomePage(),
+        '/settings': (context) => const SettingsPage(),
+      },
     );
   }
 }
