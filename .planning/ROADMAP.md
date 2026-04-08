@@ -13,6 +13,12 @@
 
 **Requirements:** CONN-01, CONN-02, CONN-03, CONN-04
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Flutter project skeleton + ConnectionManager (state machine, heartbeat, reconnection, send queue)
+- [ ] 01-02-PLAN.md — UI layer: settings page, connection status bar, home page with test send/receive
+
 **Success Criteria:**
 1. Flutter 项目能在 Android 模拟器和真机上运行
 2. 能配置 NAS 地址和 token，通过 WebSocket 连接到桌面端
