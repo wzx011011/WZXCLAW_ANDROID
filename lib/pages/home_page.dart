@@ -27,6 +27,7 @@ class _HomePageState extends State<HomePage>
 
   List<ChatMessage> _displayMessages = [];
   bool _isStreaming = false;
+  bool _hasConnectedOnce = false;
   WsConnectionState _prevState = WsConnectionState.disconnected;
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
@@ -66,14 +67,17 @@ class _HomePageState extends State<HomePage>
 
     _connectionStateSub = ConnectionManager.instance.stateStream.listen((state) {
       if (mounted && _prevState != WsConnectionState.connected && state == WsConnectionState.connected) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('正在同步离线消息...', style: TextStyle(color: Colors.white70)),
-            backgroundColor: Color(0xFF16213E),
-            duration: Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        if (_hasConnectedOnce) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('正在同步离线消息...', style: TextStyle(color: Colors.white70)),
+              backgroundColor: Color(0xFF16213E),
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        _hasConnectedOnce = true;
       }
       _prevState = state;
     });
