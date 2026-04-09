@@ -122,7 +122,11 @@ class VoiceInputService {
   /// Stop listening. Called when user releases the mic button.
   Future<void> stopListening() async {
     if (!_listening) return;
-    await _speech.stop();
+    try {
+      await _speech.stop();
+    } catch (_) {
+      // Speech engine may already be stopped by the system
+    }
     _listening = false;
     _statusController.add(false);
   }
