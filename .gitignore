@@ -23,3 +23,8 @@ Thumbs.db
 .flutter-plugins-dependencies
 *.lock
 !pubspec.lock
+
+# Firebase
+android/app/google-services.json
+fcm-service-account.json
+relay/fcm-service-account.json
