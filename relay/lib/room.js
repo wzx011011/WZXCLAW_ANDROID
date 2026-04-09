@@ -1,0 +1,192 @@
+'use strict';
+
+const { log, warn } = require('./logger');
+
+/**
+ * Manages rooms keyed by token. Each room holds at most one desktop and one mobile WebSocket.
+ */
+class RoomManager {
+  constructor() {
+    // Map<string, { desktop: WebSocket|null, mobile: WebSocket|null }>
+    this._rooms = new Map();
+  }
+
+  /**
+   * Add a WebSocket to a room under the given role.
+   * If role is "desktop" and a desktop already exists, close the old one with code 4002.
+   *
+   * @param {string} token - Room token.
+   * @param {string} role - "desktop" or "mobile".
+   * @param {WebSocket} ws - The WebSocket connection.
+   */
+  join(token, role, ws) {
+    if (!this._rooms.has(token)) {
+      this._rooms.set(token, { desktop: null, mobile: null });
+    }
+
+    const room = this._rooms.get(token);
+
+    if (role === 'desktop') {
+      // If a desktop already exists, replace it.
+      if (room.desktop) {
+        try {
+          room.desktop.close(4002, 'replaced by new connection');
+        } catch (_) {
+          // May already be closed.
+        }
+        log(`Room [${token}]: existing desktop replaced (code 4002)`);
+      }
+      room.desktop = ws;
+    } else {
+      // mobile
+      room.mobile = ws;
+    }
+
+    log(`Room [${token}]: ${role} joined (rooms active: ${this._rooms.size})`);
+
+    // Wire up event handlers.
+    ws.on('message', (data) => {
+      this._onMessage(token, role, ws, data);
+    });
+
+    ws.on('close', () => {
+      this._onDisconnect(token, role, ws);
+    });
+
+    ws.on('error', (err) => {
+      warn(`Room [${token}]: ${role} error: ${err.message}`);
+      this._onDisconnect(token, role, ws);
+    });
+  }
+
+  /**
+   * Forward a message from one side to the other.
+   * @param {WebSocket} from - Sender.
+   * @param {WebSocket|null} to - Recipient.
+   * @param {string} data - Raw message data.
+   */
+  _forward(from, to, data) {
+    if (to && to.readyState === 1) {
+      try {
+        to.send(data);
+      } catch (err) {
+        warn(`Forward error: ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Handle incoming message from a client.
+   * - ping/pong: log and consume (do not forward).
+   * - Everything else: forward to the paired client.
+   *
+   * @param {string} token
+   * @param {string} role - "desktop" or "mobile"
+   * @param {WebSocket} ws
+   * @param {Buffer|string} data
+   */
+  _onMessage(token, role, ws, data) {
+    const raw = typeof data === 'string' ? data : data.toString('utf8');
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (_) {
+      warn(`Room [${token}]: ${role} sent non-JSON message, ignoring`);
+      return;
+    }
+
+    const event = parsed.event;
+
+    // Consume heartbeat messages.
+    if (event === 'ping' || event === 'pong') {
+      log(`Room [${token}]: ${role} heartbeat (${event}), consumed`);
+      return;
+    }
+
+    // Forward to the other side.
+    const room = this._rooms.get(token);
+    if (!room) return;
+
+    const target = role === 'desktop' ? room.mobile : room.desktop;
+    this._forward(ws, target, raw);
+    log(`Room [${token}]: ${role} -> ${role === 'desktop' ? 'mobile' : 'desktop'} event=${event}`);
+  }
+
+  /**
+   * Handle client disconnection.
+   * - Remove the client from its room slot.
+   * - Notify the other side with a system message.
+   * - Delete the room if both sides are null.
+   *
+   * @param {string} token
+   * @param {string} role
+   * @param {WebSocket} ws
+   */
+  _onDisconnect(token, role, ws) {
+    const room = this._rooms.get(token);
+    if (!room) return;
+
+    // Clear the slot only if this ws is still the current occupant.
+    if (role === 'desktop' && room.desktop === ws) {
+      room.desktop = null;
+    } else if (role === 'mobile' && room.mobile === ws) {
+      room.mobile = null;
+    }
+
+    log(`Room [${token}]: ${role} disconnected`);
+
+    // Notify the other side.
+    if (role === 'desktop' && room.mobile) {
+      this._sendSystem(room.mobile, 'system:desktop_disconnected');
+    } else if (role === 'mobile' && room.desktop) {
+      this._sendSystem(room.desktop, 'system:mobile_disconnected');
+    }
+
+    // Clean up empty rooms.
+    if (room.desktop === null && room.mobile === null) {
+      this._rooms.delete(token);
+      log(`Room [${token}]: room deleted (empty)`);
+    }
+  }
+
+  /**
+   * Send a system event to a WebSocket if it is open.
+   * @param {WebSocket} ws
+   * @param {string} event
+   */
+  _sendSystem(ws, event) {
+    if (ws && ws.readyState === 1) {
+      try {
+        ws.send(JSON.stringify({ event }));
+      } catch (_) {
+        // Ignore send errors on closing sockets.
+      }
+    }
+  }
+
+  /**
+   * Return the number of active rooms.
+   * @returns {number}
+   */
+  getRoomCount() {
+    return this._rooms.size;
+  }
+
+  /**
+   * Close all connections and clear all rooms. Used for graceful shutdown.
+   */
+  closeAll() {
+    for (const [token, room] of this._rooms) {
+      if (room.desktop) {
+        try { room.desktop.close(1001, 'server shutdown'); } catch (_) {}
+      }
+      if (room.mobile) {
+        try { room.mobile.close(1001, 'server shutdown'); } catch (_) {}
+      }
+    }
+    this._rooms.clear();
+  }
+}
+
+module.exports = { RoomManager };
