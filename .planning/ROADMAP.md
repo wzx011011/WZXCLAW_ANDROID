@@ -86,6 +86,12 @@ Plans:
 
 **Requirements:** PROJ-01, PROJ-02, PROJ-03
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Data layer: Project model + ProjectStore singleton (command sending, response parsing, SharedPreferences persistence)
+- [ ] 04-02-PLAN.md — UI layer: ProjectListTile widget, ProjectDrawer widget, HomePage drawer integration
+
 **Success Criteria:**
 1. 能看到桌面端当前打开的项目列表
 2. 能切换活跃项目，桌面端响应切换
