@@ -84,4 +84,4 @@ server.listen(PORT, () => {
 });
 
 // Export for testing.
-module.exports = { server, wss, roomManager };
+module.exports = { server, wss, roomManager, statusInterval };

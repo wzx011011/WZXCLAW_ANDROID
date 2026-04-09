@@ -85,6 +85,7 @@ describe('Relay Integration Tests', () => {
   afterEach(async () => {
     // Clean up server.
     if (serverModule) {
+      clearInterval(serverModule.statusInterval);
       serverModule.roomManager.closeAll();
       await new Promise((resolve) => {
         serverModule.wss.close(() => {

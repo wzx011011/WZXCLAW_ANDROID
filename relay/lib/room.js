@@ -29,14 +29,23 @@ class RoomManager {
     if (role === 'desktop') {
       // If a desktop already exists, replace it.
       if (room.desktop) {
+        const oldDesktop = room.desktop;
+        // Clear the slot first to prevent _onDisconnect from deleting the room
+        // when the old desktop's close handler fires synchronously.
+        room.desktop = null;
         try {
-          room.desktop.close(4002, 'replaced by new connection');
+          oldDesktop.close(4002, 'replaced by new connection');
         } catch (_) {
           // May already be closed.
         }
         log(`Room [${token}]: existing desktop replaced (code 4002)`);
       }
       room.desktop = ws;
+      // Ensure the room is in the map -- it may have been deleted by the
+      // old desktop's close handler firing synchronously during replacement.
+      if (!this._rooms.has(token)) {
+        this._rooms.set(token, room);
+      }
     } else {
       // mobile
       room.mobile = ws;
