@@ -46,7 +46,7 @@ async function sendPushNotification(fcmToken, { title, body, channelId = 'task_c
         channel: channelId,
       },
       android: {
-        priority: channelId === 'error' ? 'high' : 'high',
+        priority: 'high',
         notification: {
           channelId: channelId,
         },
