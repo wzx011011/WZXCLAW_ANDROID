@@ -8,6 +8,7 @@ import '../models/connection_state.dart';
 import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
 import '../widgets/connection_status_bar.dart';
+import '../widgets/project_drawer.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -157,6 +158,7 @@ class _HomePageState extends State<HomePage>
           ),
         ],
       ),
+      drawer: const ProjectDrawer(),
       body: Column(
         children: [
           StreamBuilder<WsConnectionState>(
