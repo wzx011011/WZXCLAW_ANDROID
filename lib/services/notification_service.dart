@@ -66,6 +66,7 @@ class NotificationService with WidgetsBindingObserver {
   String? _fcmToken;
   bool _isForeground = true;
   bool _initialized = false;
+  StreamSubscription<WsConnectionState>? _connectSub;
 
   /// Global navigator key for notification tap navigation.
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -202,7 +203,7 @@ class NotificationService with WidgetsBindingObserver {
   /// Send FCM token to relay on each successful WebSocket connection.
   /// Handles the race condition where token is obtained before WebSocket connects.
   void _registerTokenOnConnect() {
-    ConnectionManager.instance.stateStream.listen((state) {
+    _connectSub = ConnectionManager.instance.stateStream.listen((state) {
       if (state == WsConnectionState.connected && _fcmToken != null) {
         _sendTokenToRelay(_fcmToken!);
       }
@@ -221,6 +222,7 @@ class NotificationService with WidgetsBindingObserver {
   }
 
   void dispose() {
+    _connectSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
   }
 }
