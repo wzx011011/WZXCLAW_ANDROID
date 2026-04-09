@@ -108,11 +108,11 @@ Plans:
 
 **Requirements:** VOICE-01, VOICE-02, VOICE-03
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 05-01-PLAN.md — Add speech_to_text + permission_handler dependencies, Android manifest permissions, VoiceInputService singleton with tests
-- [ ] 05-02-PLAN.md — MicButton widget (long-press gesture, recording animation), HomePage input bar integration, voice error SnackBar handling
+- [x] 05-01-PLAN.md — Add speech_to_text + permission_handler dependencies, Android manifest permissions, VoiceInputService singleton with tests
+- [x] 05-02-PLAN.md — MicButton widget (long-press gesture, recording animation), HomePage input bar integration, voice error SnackBar handling
 
 **Success Criteria:**
 1. 按住麦克风按钮说话，松开后识别为文字

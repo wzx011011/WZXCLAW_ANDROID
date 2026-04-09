@@ -35,9 +35,9 @@
 
 ### Voice Input
 
-- [ ] **VOICE-01**: 用户能通过麦克风语音输入指令
-- [ ] **VOICE-02**: 支持中文语音识别
-- [ ] **VOICE-03**: 语音识别结果可编辑后再发送
+- [x] **VOICE-01**: 用户能通过麦克风语音输入指令
+- [x] **VOICE-02**: 支持中文语音识别
+- [x] **VOICE-03**: 语音识别结果可编辑后再发送
 
 ### NAS Relay Server
 
@@ -104,9 +104,9 @@
 | PROJ-01 | Phase 4 | Pending |
 | PROJ-02 | Phase 4 | Pending |
 | PROJ-03 | Phase 4 | Pending |
-| VOICE-01 | Phase 5 | Pending |
-| VOICE-02 | Phase 5 | Pending |
-| VOICE-03 | Phase 5 | Pending |
+| VOICE-01 | Phase 5 | Complete |
+| VOICE-02 | Phase 5 | Complete |
+| VOICE-03 | Phase 5 | Complete |
 | NOTI-01 | Phase 6 | Pending |
 | NOTI-02 | Phase 6 | Pending |
 | NOTI-03 | Phase 6 | Pending |

@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-04-09T08:59:23.820Z"
+last_updated: "2026-04-09T13:10:06.865Z"
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  completed_phases: 5
+  total_plans: 12
+  completed_plans: 12
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-09)
 
 **Core value:** 手机端能实时和桌面端 wzxClaw 的 AI Agent 对话，看到流式回复和工具调用过程，且在广域网环境下稳定可用。
-**Current focus:** Phase 03 — Chat UI + Streaming
+**Current focus:** Phase 5 — Voice Input
 
 ## Phase Status
 
