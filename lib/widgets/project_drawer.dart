@@ -99,92 +99,98 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
   }
 
   Widget _buildProjectList() {
-    final connectionState = ConnectionManager.instance.state;
-    final isDisconnected = connectionState == WsConnectionState.disconnected;
+    return StreamBuilder<WsConnectionState>(
+      stream: ConnectionManager.instance.stateStream,
+      initialData: ConnectionManager.instance.state,
+      builder: (context, stateSnapshot) {
+        final isDisconnected =
+            stateSnapshot.data == WsConnectionState.disconnected;
 
-    return StreamBuilder<List<Project>>(
-      stream: ProjectStore.instance.projectsStream,
-      initialData: ProjectStore.instance.projects,
-      builder: (context, snapshot) {
-        final projects = snapshot.data ?? [];
+        return StreamBuilder<List<Project>>(
+          stream: ProjectStore.instance.projectsStream,
+          initialData: ProjectStore.instance.projects,
+          builder: (context, snapshot) {
+            final projects = snapshot.data ?? [];
 
-        // Disconnected state
-        if (isDisconnected) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                '未连接 -- 无法获取项目',
-                style: TextStyle(
-                  color: Colors.white38,
-                  fontSize: 14,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          );
-        }
-
-        // Empty state
-        if (projects.isEmpty && !_isLoading) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '暂无项目',
+            // Disconnected state
+            if (isDisconnected) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    '未连接 -- 无法获取项目',
                     style: TextStyle(
                       color: Colors.white38,
-                      fontSize: 16,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '未能获取桌面端项目列表，请确认桌面端已连接',
-                    style: TextStyle(
-                      color: Colors.white24,
-                      fontSize: 13,
+                      fontSize: 14,
                     ),
                     textAlign: TextAlign.center,
                   ),
-                ],
-              ),
-            ),
-          );
-        }
+                ),
+              );
+            }
 
-        // Project list with pull-to-refresh
-        return RefreshIndicator(
-          color: const Color(0xFF6366F1),
-          backgroundColor: const Color(0xFF16213E),
-          onRefresh: () async {
-            ProjectStore.instance.fetchProjects();
-            // Wait briefly for the fetch to start, then let stream update UI
-            await Future.delayed(const Duration(milliseconds: 500));
-          },
-          child: StreamBuilder<String?>(
-            stream: ProjectStore.instance.currentProjectStream,
-            initialData: ProjectStore.instance.currentProjectName,
-            builder: (context, currentSnapshot) {
-              return ListView.builder(
-                itemCount: projects.length,
-                itemBuilder: (context, index) {
-                  final project = projects[index];
-                  final isActive = project.name == currentSnapshot.data;
-                  return ProjectListTile(
-                    project: project,
-                    isActive: isActive,
-                    onTap: () {
-                      ProjectStore.instance.switchProject(project.name);
-                      Navigator.pop(context); // Close drawer per Pitfall 4
+            // Empty state
+            if (projects.isEmpty && !_isLoading) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '暂无项目',
+                        style: TextStyle(
+                          color: Colors.white38,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '未能获取桌面端项目列表，请确认桌面端已连接',
+                        style: TextStyle(
+                          color: Colors.white24,
+                          fontSize: 13,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // Project list with pull-to-refresh
+            return RefreshIndicator(
+              color: const Color(0xFF6366F1),
+              backgroundColor: const Color(0xFF16213E),
+              onRefresh: () async {
+                ProjectStore.instance.fetchProjects();
+                // Wait briefly for the fetch to start, then let stream update UI
+                await Future.delayed(const Duration(milliseconds: 500));
+              },
+              child: StreamBuilder<String?>(
+                stream: ProjectStore.instance.currentProjectStream,
+                initialData: ProjectStore.instance.currentProjectName,
+                builder: (context, currentSnapshot) {
+                  return ListView.builder(
+                    itemCount: projects.length,
+                    itemBuilder: (context, index) {
+                      final project = projects[index];
+                      final isActive = project.name == currentSnapshot.data;
+                      return ProjectListTile(
+                        project: project,
+                        isActive: isActive,
+                        onTap: () {
+                          ProjectStore.instance.switchProject(project.name);
+                          Navigator.pop(context); // Close drawer per Pitfall 4
+                        },
+                      );
                     },
                   );
                 },
-              );
-            },
-          ),
+              ),
+            );
+          },
         );
       },
     );
