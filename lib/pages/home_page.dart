@@ -27,9 +27,11 @@ class _HomePageState extends State<HomePage>
 
   List<ChatMessage> _displayMessages = [];
   bool _isStreaming = false;
+  WsConnectionState _prevState = WsConnectionState.disconnected;
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
   StreamSubscription? _voiceErrorSub;
+  StreamSubscription<WsConnectionState>? _connectionStateSub;
 
   @override
   void initState() {
@@ -61,6 +63,20 @@ class _HomePageState extends State<HomePage>
         );
       }
     });
+
+    _connectionStateSub = ConnectionManager.instance.stateStream.listen((state) {
+      if (mounted && _prevState != WsConnectionState.connected && state == WsConnectionState.connected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('正在同步离线消息...', style: TextStyle(color: Colors.white70)),
+            backgroundColor: Color(0xFF16213E),
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      _prevState = state;
+    });
   }
 
   @override
@@ -68,6 +84,7 @@ class _HomePageState extends State<HomePage>
     _messagesSub?.cancel();
     _streamingSub?.cancel();
     _voiceErrorSub?.cancel();
+    _connectionStateSub?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
