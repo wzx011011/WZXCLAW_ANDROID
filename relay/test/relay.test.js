@@ -1,0 +1,248 @@
+'use strict';
+
+const { describe, it, beforeEach, afterEach } = require('node:test');
+const assert = require('node:assert/strict');
+const WebSocket = require('ws');
+
+const TEST_PORT = 18765;
+const TEST_TOKEN = 'test-secret-token';
+
+/**
+ * Helper: connect a WebSocket client and wait for it to open.
+ * @param {string} path - Query string path (e.g., '?token=xxx&role=desktop')
+ * @param {number} timeout - Connection timeout in ms
+ * @returns {Promise<WebSocket>}
+ */
+function connectClient(path, timeout = 3000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Connection timeout')), timeout);
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}${path}`);
+    ws.on('open', () => {
+      clearTimeout(timer);
+      resolve(ws);
+    });
+    ws.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Helper: wait for a message on a WebSocket.
+ * @param {WebSocket} ws
+ * @param {number} timeout - Timeout in ms
+ * @returns {Promise<object>} Parsed JSON message
+ */
+function waitForMessage(ws, timeout = 3000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Message timeout')), timeout);
+    ws.once('message', (data) => {
+      clearTimeout(timer);
+      try {
+        resolve(JSON.parse(data.toString()));
+      } catch (e) {
+        reject(e);
+      }
+    });
+  });
+}
+
+/**
+ * Helper: wait for a WebSocket to close.
+ * @param {WebSocket} ws
+ * @param {number} timeout
+ * @returns {Promise<{code: number, reason: string}>}
+ */
+function waitForClose(ws, timeout = 3000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Close timeout')), timeout);
+    ws.on('close', (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: reason.toString() });
+    });
+    ws.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+describe('Relay Integration Tests', () => {
+  let serverModule;
+
+  beforeEach(() => {
+    // Set up environment for the server.
+    process.env.AUTH_TOKEN = TEST_TOKEN;
+    process.env.PORT = String(TEST_PORT);
+
+    // Fresh require to pick up new env vars.
+    delete require.cache[require.resolve('../server')];
+    delete require.cache[require.resolve('../lib/auth')];
+    serverModule = require('../server');
+  });
+
+  afterEach(async () => {
+    // Clean up server.
+    if (serverModule) {
+      serverModule.roomManager.closeAll();
+      await new Promise((resolve) => {
+        serverModule.wss.close(() => {
+          serverModule.server.close(resolve);
+        });
+      });
+    }
+    delete process.env.AUTH_TOKEN;
+    delete process.env.PORT;
+  });
+
+  it('rejects connection without token with code 4001', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/`);
+    const closeEvent = await waitForClose(ws);
+    assert.equal(closeEvent.code, 4001);
+    assert.equal(closeEvent.reason, 'missing token');
+  });
+
+  it('rejects connection with wrong token with code 4001', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/?token=wrong-token&role=mobile`);
+    const closeEvent = await waitForClose(ws);
+    assert.equal(closeEvent.code, 4001);
+    assert.equal(closeEvent.reason, 'invalid token');
+  });
+
+  it('accepts desktop and mobile with correct token and forwards messages', async () => {
+    // Connect desktop.
+    const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+
+    // Connect mobile.
+    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Desktop sends connected event -> mobile receives it.
+    desktop.send(JSON.stringify({ event: 'connected', data: { status: 'ok' } }));
+    const msg1 = await waitForMessage(mobile);
+    assert.equal(msg1.event, 'connected');
+    assert.deepEqual(msg1.data, { status: 'ok' });
+
+    // Mobile sends command -> desktop receives it.
+    mobile.send(JSON.stringify({ event: 'command:send', data: { content: 'hello' } }));
+    const msg2 = await waitForMessage(desktop);
+    assert.equal(msg2.event, 'command:send');
+    assert.deepEqual(msg2.data, { content: 'hello' });
+
+    // Clean up.
+    desktop.close();
+    mobile.close();
+  });
+
+  it('does not forward ping messages to the other side', async () => {
+    const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Desktop sends ping.
+    desktop.send(JSON.stringify({ event: 'ping' }));
+
+    // Mobile sends pong.
+    mobile.send(JSON.stringify({ event: 'pong' }));
+
+    // Wait briefly to ensure no messages arrive.
+    const received = [];
+    mobile.on('message', (data) => received.push(data.toString()));
+    desktop.on('message', (data) => received.push(data.toString()));
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    assert.equal(received.length, 0, 'No messages should have been forwarded');
+
+    desktop.close();
+    mobile.close();
+  });
+
+  it('ignores non-JSON messages without crashing', async () => {
+    const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Send non-JSON.
+    desktop.send('this is not json');
+
+    // Wait briefly.
+    const received = [];
+    mobile.on('message', (data) => received.push(data.toString()));
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    assert.equal(received.length, 0, 'Non-JSON should be ignored');
+
+    // Server should still be functional: send a valid message.
+    desktop.send(JSON.stringify({ event: 'connected', data: {} }));
+    const msg = await waitForMessage(mobile);
+    assert.equal(msg.event, 'connected');
+
+    desktop.close();
+    mobile.close();
+  });
+
+  it('notifies mobile with system:desktop_disconnected when desktop closes', async () => {
+    const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Close desktop.
+    desktop.close();
+
+    // Mobile should receive system notification.
+    const msg = await waitForMessage(mobile);
+    assert.equal(msg.event, 'system:desktop_disconnected');
+
+    mobile.close();
+  });
+
+  it('notifies desktop with system:mobile_disconnected when mobile closes', async () => {
+    const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Close mobile.
+    mobile.close();
+
+    // Desktop should receive system notification.
+    const msg = await waitForMessage(desktop);
+    assert.equal(msg.event, 'system:mobile_disconnected');
+
+    desktop.close();
+  });
+
+  it('replaces first desktop when second desktop connects with same token', async () => {
+    const desktop1 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Connect a second desktop.
+    const desktop2 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+
+    // First desktop should be closed with code 4002.
+    const closeEvent = await waitForClose(desktop1);
+    assert.equal(closeEvent.code, 4002);
+
+    // Second desktop should be able to send messages to mobile.
+    desktop2.send(JSON.stringify({ event: 'connected', data: { replaced: true } }));
+    const msg = await waitForMessage(mobile);
+    assert.equal(msg.event, 'connected');
+    assert.deepEqual(msg.data, { replaced: true });
+
+    desktop2.close();
+    mobile.close();
+  });
+
+  it('defaults role to mobile when role param is missing', async () => {
+    // Connect without role param.
+    const client = await connectClient(`?token=${TEST_TOKEN}`);
+
+    // Connect a desktop.
+    const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+
+    // Desktop sends message -> client (default mobile) receives it.
+    desktop.send(JSON.stringify({ event: 'connected', data: {} }));
+    const msg = await waitForMessage(client);
+    assert.equal(msg.event, 'connected');
+
+    desktop.close();
+    client.close();
+  });
+});
