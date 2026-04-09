@@ -102,18 +102,21 @@ class VoiceInputService {
     }
 
     // Start listening with system default locale
-    await _speech.listen(
-      onResult: (result) {
-        if (result.finalResult) {
-          onResult(result.recognizedWords);
-        }
-      },
-      // No localeId specified -- uses system default (per CONTEXT.md decision D-06)
-    );
+    try {
+      await _speech.listen(
+        onResult: (result) {
+          if (result.finalResult) {
+            onResult(result.recognizedWords);
+          }
+        },
+        // No localeId specified -- uses system default (per CONTEXT.md decision D-06)
+      );
 
-    _listening = true;
-    _statusController.add(true);
-    HapticFeedback.mediumImpact();
+      _listening = true;
+      _statusController.add(true);
+    } catch (e) {
+      _errorController.add(VoiceError.recognitionFailed);
+    }
   }
 
   /// Stop listening. Called when user releases the mic button.
