@@ -130,6 +130,13 @@ Plans:
 
 **Requirements:** NOTI-01, NOTI-02, NOTI-03, RELAY-04
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Relay server: FCM module (firebase-admin SDK) + offline message queue with 24h TTL + push notification on task-complete events
+- [ ] 06-02-PLAN.md — Flutter client: NotificationService singleton (FCM init, background handler, foreground suppression, notification tap navigation) + Android build config for Firebase
+- [ ] 06-03-PLAN.md — UI: push notification toggle in settings page + offline sync SnackBar on home page
+
 **Success Criteria:**
 1. AI 任务完成时，手机收到推送通知（app 在后台）
 2. 点击通知跳转到对应会话页面
@@ -145,18 +152,18 @@ Plans:
 
 ```
 Phase 1 (Foundation + WS Client)
-  ↓
+  |
 Phase 2 (NAS Relay Server)
-  ↓
+  |
 Phase 3 (Chat UI + Streaming)
-  ↓         ↓
+  |         |
 Phase 4    Phase 5
 (Project)  (Voice)
-  ↑         ↑
-  └─────────┴── Phase 6 (Push Notifications)
+  |         |
+  +---------+ Phase 6 (Push Notifications)
 ```
 
-**Parallelizable:** Phases 4 and 5 can run in parallel after Phase 3.
+**Parallelizable:** Phases 4 and 5 can run in parallel after Phase 3. Plans 01 and 02 within Phase 6 can run in parallel (relay vs flutter, no file overlap).
 
 ---
 
