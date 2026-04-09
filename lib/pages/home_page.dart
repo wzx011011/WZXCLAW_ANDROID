@@ -7,7 +7,9 @@ import '../models/chat_message.dart';
 import '../models/connection_state.dart';
 import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
+import '../services/voice_input_service.dart';
 import '../widgets/connection_status_bar.dart';
+import '../widgets/mic_button.dart';
 import '../widgets/project_drawer.dart';
 
 class HomePage extends StatefulWidget {
@@ -27,6 +29,7 @@ class _HomePageState extends State<HomePage>
   bool _isStreaming = false;
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
+  StreamSubscription? _voiceErrorSub;
 
   @override
   void initState() {
@@ -46,12 +49,25 @@ class _HomePageState extends State<HomePage>
     });
 
     _scrollController.addListener(_onScroll);
+
+    _voiceErrorSub = VoiceInputService.instance.errorStream.listen((error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(VoiceInputService.errorMessage(error)),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _messagesSub?.cancel();
     _streamingSub?.cancel();
+    _voiceErrorSub?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -344,6 +360,17 @@ class _HomePageState extends State<HomePage>
                   ),
                   onSubmitted: isConnected ? (_) => _sendMessage() : null,
                 ),
+              ),
+              const SizedBox(width: 8),
+              MicButton(
+                onResult: (text) {
+                  _inputController.text = text;
+                  _inputController.selection = TextSelection.fromPosition(
+                    TextPosition(offset: _inputController.text.length),
+                  );
+                },
+                isConnected: isConnected,
+                isStreaming: _isStreaming,
               ),
               const SizedBox(width: 8),
               if (_isStreaming)
