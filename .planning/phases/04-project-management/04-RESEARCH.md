@@ -405,17 +405,17 @@ Widget build(BuildContext context) {
 | A3 | Project status (`isRunning`) can be determined from the desktop's response to `/projects` | PROJ-03 | If desktop doesn't include task status in project list, PROJ-03 cannot be fully implemented. Would need to show all projects as "unknown status". |
 | A4 | The current project name can be persisted in `SharedPreferences` for UX continuity | Architecture Patterns | Low risk -- SharedPreferences is already in use and suitable for simple string storage. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Desktop response format for `/projects`**
+1. **Desktop response format for `/projects`** — RESOLVED
    - What we know: Mobile sends `/projects` command via `command:send`. Desktop responds via `message:assistant`.
    - What's unclear: The exact JSON structure of the response. Will it be `{ "projects": [{ "name": "...", "status": "running|idle" }] }` or a bare array `[{ "name": "...", "status": "running|idle" }]` or plain text?
-   - Recommendation: Design `ProjectStore` parser to handle both a `data.projects` array (if `data` is a Map) and a bare array (if `data` is a List). Add a fallback that shows raw text if parsing fails. This can be refined once desktop implementation is confirmed.
+   - Resolution: Design `ProjectStore` parser to handle both a `data.projects` array (if `data` is a Map) and a bare array (if `data` is a List). Add a fallback that shows raw text if parsing fails. Plans implement multi-format defensive parsing.
 
-2. **How to detect current project on initial load**
+2. **How to detect current project on initial load** — RESOLVED
    - What we know: The drawer should highlight the currently active project.
    - What's unclear: How does the mobile app know which project is active? Does `/projects` response include an `active` flag, or does the mobile track it from the last `/switch` command?
-   - Recommendation: Track current project from the last successful `/switch` command (persist to SharedPreferences). On `/projects` response, check if any project matches the persisted name. Also, if the desktop response includes an `active` field, use that as the source of truth.
+   - Resolution: Track current project from the last successful `/switch` command (persist to SharedPreferences). On `/projects` response, check if any project matches the persisted name. Also, if the desktop response includes an `active` field, use that as the source of truth.
 
 ## Environment Availability
 
