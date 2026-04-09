@@ -225,10 +225,11 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildUserBubble(ChatMessage msg, int index) {
     final screenWidth = MediaQuery.of(context).size.width;
+    final msgId = msg.id;
     return Align(
       alignment: Alignment.centerRight,
       child: GestureDetector(
-        onTap: () => _toggleTimestamp(msg.id ?? msg.createdAt.millisecondsSinceEpoch),
+        onTap: msgId != null ? () => _toggleTimestamp(msgId) : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -242,7 +243,7 @@ class _HomePageState extends State<HomePage>
               child: Text(msg.content,
                   style: const TextStyle(color: Colors.white, fontSize: 15)),
             ),
-            if (_revealedMessageIds.contains(msg.id ?? msg.createdAt.millisecondsSinceEpoch))
+            if (msgId != null && _revealedMessageIds.contains(msgId))
               Padding(
                 padding: const EdgeInsets.only(top: 4, right: 4),
                 child: Text(_formatTime(msg.createdAt),
@@ -256,10 +257,11 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildAssistantBlock(ChatMessage msg, int index) {
+    final msgId = msg.id;
     return Align(
       alignment: Alignment.centerLeft,
       child: GestureDetector(
-        onTap: () => _toggleTimestamp(msg.id ?? msg.createdAt.millisecondsSinceEpoch),
+        onTap: msgId != null ? () => _toggleTimestamp(msgId) : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -282,7 +284,7 @@ class _HomePageState extends State<HomePage>
                       style: const TextStyle(
                           color: Colors.white70, fontSize: 15)),
             ),
-            if (_revealedMessageIds.contains(msg.id ?? msg.createdAt.millisecondsSinceEpoch))
+            if (msgId != null && _revealedMessageIds.contains(msgId))
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 12),
                 child: Text(_formatTime(msg.createdAt),
