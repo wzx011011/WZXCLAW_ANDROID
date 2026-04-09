@@ -1,19 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/chat_message.dart';
 import '../models/connection_state.dart';
-import '../models/ws_message.dart';
+import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
 import '../widgets/connection_status_bar.dart';
 
-/// Main page for wzxClaw Android.
-///
-/// Displays real-time connection status, a scrollable message log of all
-/// received WebSocket messages, and a text input for sending test commands
-/// to the wzxClaw desktop IDE.
-///
-/// This is the Phase 1 "end-to-end verification" UI. Phase 3 will replace
-/// the message list with a proper chat UI.
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -21,44 +16,65 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
-  final List<_MessageEntry> _messages = [];
+  final _revealedTimestamps = <int>{};
+
+  List<ChatMessage> _displayMessages = [];
+  bool _isStreaming = false;
+  StreamSubscription? _messagesSub;
+  StreamSubscription? _streamingSub;
 
   @override
   void initState() {
     super.initState();
     _autoConnect();
+    ChatStore.instance.loadHistory();
+
+    _messagesSub = ChatStore.instance.messagesStream.listen((msgs) {
+      if (mounted) {
+        setState(() => _displayMessages = msgs);
+        if (_isStreaming) _scrollToBottom();
+      }
+    });
+
+    _streamingSub = ChatStore.instance.streamingStream.listen((streaming) {
+      if (mounted) setState(() => _isStreaming = streaming);
+    });
+
+    _scrollController.addListener(_onScroll);
   }
 
   @override
   void dispose() {
+    _messagesSub?.cancel();
+    _streamingSub?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Attempt auto-connect if SharedPreferences has a saved server_url.
   Future<void> _autoConnect() async {
     final prefs = await SharedPreferences.getInstance();
     final serverUrl = prefs.getString('server_url');
     if (serverUrl != null && serverUrl.isNotEmpty) {
       final token = prefs.getString('auth_token') ?? '';
       try {
-        // Build URL with token and role parameters.
-        // Supports both relay URL (wss://host/relay/) and direct URL (ws://host:port).
         final uri = Uri.parse(serverUrl);
         final params = Map<String, String>.from(uri.queryParameters);
         params['role'] = 'mobile';
-        if (token.isNotEmpty) {
-          params['token'] = token;
-        }
+        if (token.isNotEmpty) params['token'] = token;
         final fullUrl = uri.replace(queryParameters: params).toString();
         ConnectionManager.instance.connect(fullUrl);
-      } catch (e) {
-        // Malformed saved URL -- skip auto-connect, user can fix in settings.
-      }
+      } catch (_) {}
+    }
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels <= 50) {
+      ChatStore.instance.loadMoreMessages();
     }
   }
 
@@ -66,23 +82,46 @@ class _HomePageState extends State<HomePage> {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
     if (ConnectionManager.instance.state != WsConnectionState.connected) return;
-
-    final message = WsMessage(
-      event: WsEvents.commandSend,
-      data: {'content': text},
-    );
-    ConnectionManager.instance.send(message);
-
-    // Show the sent message in the local log.
-    setState(() {
-      _messages.add(_MessageEntry(
-        event: '(sent) ${WsEvents.commandSend}',
-        content: text,
-        isLocal: true,
-      ));
-    });
+    ChatStore.instance.sendMessage(text);
     _inputController.clear();
     _scrollToBottom();
+  }
+
+  void _clearSession() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16213E),
+        title: const Text('清空会话', style: TextStyle(color: Colors.white)),
+        content: const Text('确定要清空所有消息吗？',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ChatStore.instance.clearSession();
+              setState(() => _revealedTimestamps.clear());
+            },
+            child:
+                const Text('清空', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleTimestamp(int index) {
+    setState(() {
+      if (_revealedTimestamps.contains(index)) {
+        _revealedTimestamps.remove(index);
+      } else {
+        _revealedTimestamps.add(index);
+      }
+    });
   }
 
   void _scrollToBottom() {
@@ -97,12 +136,20 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  String _formatTime(DateTime dt) =>
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('wzxClaw'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: '清空会话',
+            onPressed: _clearSession,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             tooltip: '设置',
@@ -112,97 +159,144 @@ class _HomePageState extends State<HomePage> {
       ),
       body: Column(
         children: [
-          // -- Connection status bar --
           StreamBuilder<WsConnectionState>(
             stream: ConnectionManager.instance.stateStream,
             initialData: ConnectionManager.instance.state,
             builder: (context, snapshot) {
-              final state = snapshot.data ?? WsConnectionState.disconnected;
-              return ConnectionStatusBar(state: state);
+              return ConnectionStatusBar(
+                  state: snapshot.data ?? WsConnectionState.disconnected);
             },
           ),
-
-          // -- Message list --
-          Expanded(
-            child: StreamBuilder<WsMessage>(
-              stream: ConnectionManager.instance.messageStream,
-              builder: (context, snapshot) {
-                if (snapshot.hasData) {
-                  final msg = snapshot.data!;
-                  // Only add if it is not a duplicate of the last message
-                  // (StreamBuilder rebuilds can cause re-emission).
-                  final entry = _MessageEntry(
-                    event: msg.event,
-                    content: msg.data?.toString() ?? '',
-                    isLocal: false,
-                  );
-                  // Avoid duplicate entries on rebuild.
-                  if (_messages.isEmpty ||
-                      _messages.last.event != entry.event ||
-                      _messages.last.content != entry.content) {
-                    _messages.add(entry);
-                    _scrollToBottom();
-                  }
-                }
-
-                if (_messages.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      '暂无消息',
-                      style: TextStyle(color: Colors.white38, fontSize: 14),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(8),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final entry = _messages[index];
-                    return _buildMessageTile(entry);
-                  },
-                );
-              },
-            ),
-          ),
-
-          // -- Input bar --
+          Expanded(child: _buildMessageList()),
           _buildInputBar(),
         ],
       ),
     );
   }
 
-  Widget _buildMessageTile(_MessageEntry entry) {
-    const surfaceColor = Color(0xFF16213E);
-    final accentColor = entry.isLocal ? const Color(0xFF6366F1) : Colors.teal;
+  Widget _buildMessageList() {
+    if (_displayMessages.isEmpty) {
+      return const Center(
+        child:
+            Text('暂无消息', style: TextStyle(color: Colors.white38, fontSize: 14)),
+      );
+    }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: surfaceColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: accentColor.withOpacity(0.2), width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            entry.event,
-            style: TextStyle(
-              color: accentColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(8),
+      itemCount: _displayMessages.length,
+      itemBuilder: (context, index) {
+        return _buildMessageItem(_displayMessages[index], index);
+      },
+    );
+  }
+
+  Widget _buildMessageItem(ChatMessage msg, int index) {
+    switch (msg.role) {
+      case MessageRole.user:
+        return _buildUserBubble(msg, index);
+      case MessageRole.assistant:
+        return _buildAssistantBlock(msg, index);
+      case MessageRole.tool:
+        return _buildToolBadge(msg);
+    }
+  }
+
+  Widget _buildUserBubble(ChatMessage msg, int index) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: GestureDetector(
+        onTap: () => _toggleTimestamp(index),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Container(
+              constraints: BoxConstraints(maxWidth: screenWidth * 0.75),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6366F1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(msg.content,
+                  style: const TextStyle(color: Colors.white, fontSize: 15)),
             ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            entry.content,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-            maxLines: 5,
-            overflow: TextOverflow.ellipsis,
+            if (_revealedTimestamps.contains(index))
+              Padding(
+                padding: const EdgeInsets.only(top: 4, right: 4),
+                child: Text(_formatTime(msg.createdAt),
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 11)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAssistantBlock(ChatMessage msg, int index) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => _toggleTimestamp(index),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: msg.isStreaming
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Flexible(
+                          child: Text(msg.content,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 15)),
+                        ),
+                        const _StreamingCursor(),
+                      ],
+                    )
+                  : Text(msg.content,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 15)),
+            ),
+            if (_revealedTimestamps.contains(index))
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 12),
+                child: Text(_formatTime(msg.createdAt),
+                    style:
+                        const TextStyle(color: Colors.white38, fontSize: 11)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolBadge(ChatMessage msg) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🔧 ', style: TextStyle(fontSize: 13)),
+          Text(msg.toolName ?? 'Tool',
+              style: const TextStyle(
+                  color: Colors.white60,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500)),
+          const SizedBox(width: 6),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: msg.toolStatus == ToolCallStatus.running
+                  ? Colors.yellow
+                  : Colors.green,
+            ),
           ),
         ],
       ),
@@ -210,8 +304,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildInputBar() {
-    const surfaceColor = Color(0xFF16213E);
-
     return StreamBuilder<WsConnectionState>(
       stream: ConnectionManager.instance.stateStream,
       initialData: ConnectionManager.instance.state,
@@ -222,7 +314,7 @@ class _HomePageState extends State<HomePage> {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: const BoxDecoration(
-            color: surfaceColor,
+            color: Color(0xFF16213E),
             border: Border(top: BorderSide(color: Colors.white12, width: 0.5)),
           ),
           child: Row(
@@ -244,23 +336,29 @@ class _HomePageState extends State<HomePage> {
                       borderSide: BorderSide.none,
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
+                        horizontal: 12, vertical: 10),
                   ),
                   onSubmitted: isConnected ? (_) => _sendMessage() : null,
                 ),
               ),
               const SizedBox(width: 8),
-              IconButton(
-                onPressed: isConnected ? _sendMessage : null,
-                icon: Icon(
-                  Icons.send,
-                  color: isConnected
-                      ? const Color(0xFF6366F1)
-                      : Colors.white24,
+              if (_isStreaming)
+                IconButton(
+                  onPressed: () => ChatStore.instance.stopGeneration(),
+                  icon: const Icon(Icons.stop_circle,
+                      color: Colors.redAccent, size: 28),
+                  tooltip: '停止生成',
+                )
+              else
+                IconButton(
+                  onPressed: isConnected ? _sendMessage : null,
+                  icon: Icon(
+                    Icons.send,
+                    color: isConnected
+                        ? const Color(0xFF6366F1)
+                        : Colors.white24,
+                  ),
                 ),
-              ),
             ],
           ),
         );
@@ -269,15 +367,38 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-/// Simple data class for messages displayed in the log.
-class _MessageEntry {
-  final String event;
-  final String content;
-  final bool isLocal;
+class _StreamingCursor extends StatefulWidget {
+  const _StreamingCursor();
 
-  _MessageEntry({
-    required this.event,
-    required this.content,
-    this.isLocal = false,
-  });
+  @override
+  State<_StreamingCursor> createState() => _StreamingCursorState();
+}
+
+class _StreamingCursorState extends State<_StreamingCursor>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 530),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: const Text('▌',
+          style: TextStyle(color: Color(0xFF6366F1), fontSize: 15)),
+    );
+  }
 }
