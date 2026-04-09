@@ -58,8 +58,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
     _saveValues();
 
-    // Construct URL with token parameter matching desktop's expected format.
-    final fullUrl = token.isEmpty ? serverUrl : '$serverUrl/?token=$token';
+    // Build URL with token and role parameters.
+    // Supports both relay URL (wss://host/relay/) and direct URL (ws://host:port).
+    final uri = Uri.parse(serverUrl);
+    final params = Map<String, String>.from(uri.queryParameters);
+    params['role'] = 'mobile';
+    if (token.isNotEmpty) {
+      params['token'] = token;
+    }
+    final fullUrl = uri.replace(queryParameters: params).toString();
     ConnectionManager.instance.connect(fullUrl);
   }
 
@@ -95,7 +102,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   controller: _serverUrlController,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'ws://192.168.1.100:3000',
+                    hintText: 'wss://5945.top/relay/',
                     hintStyle: const TextStyle(color: Colors.white38),
                     filled: true,
                     fillColor: surfaceColor,
