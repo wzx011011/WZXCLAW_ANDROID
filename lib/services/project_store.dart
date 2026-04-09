@@ -221,12 +221,14 @@ class ProjectStore {
   /// Send /switch [name] command to switch active project.
   ///
   /// Uses optimistic UI update with [_pendingSwitchName] tracking for
-  /// potential revert on failure.
+  /// potential revert on failure. Reverts automatically if no switch_result
+  /// is received within 5 seconds.
   void switchProject(String name) {
     if (ConnectionManager.instance.state != WsConnectionState.connected) {
       _errorController.add('未连接 -- 无法切换项目');
       return;
     }
+    final previousName = _currentProjectName;
     // Optimistic update
     _pendingSwitchName = name;
     _currentProjectName = name;
@@ -238,6 +240,16 @@ class ProjectStore {
         data: {'content': '/switch $name'},
       ),
     );
+
+    // Timeout: revert if no switch_result within 5 seconds
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_pendingSwitchName != null && _currentProjectName == name) {
+        _currentProjectName = previousName;
+        _pendingSwitchName = null;
+        _errorController.add('切换项目超时');
+        _notifyListeners();
+      }
+    });
   }
 
   /// Clear project data (e.g., on disconnect).
