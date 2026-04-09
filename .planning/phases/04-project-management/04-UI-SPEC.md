@@ -27,19 +27,24 @@ created: 2026-04-09
 
 ## Spacing Scale
 
-Declared values (must be multiples of 4):
+Declared values (all multiples of 4):
 
 | Token | Value | Usage |
 |-------|-------|-------|
 | xs | 4px | Icon gaps, inline padding, dot sizing |
 | sm | 8px | Compact element spacing, message list padding |
-| md | 12px | Horizontal padding for content, input horizontal |
-| lg | 16px | Page section padding, list item padding |
-| xl | 24px | Section breaks, drawer header padding |
+| lg | 16px | Page section padding, list item padding, content horizontal padding |
+| xl | 24px | Section breaks, drawer header horizontal padding |
 | 2xl | 32px | Layout gaps between groups |
 | 3xl | 48px | Major section breaks (not used this phase) |
 
-Exceptions: 14px used for input vertical padding (existing pattern in home_page.dart), 32px for connection status bar height (existing constant). Both inherited from Phase 3, do not change.
+Legacy exceptions (not part of declared token scale):
+
+| Value | Widget | Reason |
+|-------|--------|--------|
+| 14px | Input vertical padding (home_page.dart) | Inherited from Phase 3 -- do not change or extend |
+| 12px | Gap between status dot and project name in ProjectListTile | Tight inline gap needed for visual alignment within 56px list tile height |
+| 12px | Drawer footer horizontal padding | Matches the tighter spacing typical of Material drawer footers |
 
 ---
 
@@ -163,13 +168,13 @@ Integration points with existing code:
 ### Project List Item
 - Height: `56px` minimum (standard Material list tile)
 - Horizontal padding: `16px` left, `16px` right
-- Layout: [8px status dot] [12px gap] [project name] [flexible space] [check icon if active]
+- Layout: [8px status dot] [12px gap -- legacy exception] [project name] [flexible space] [check icon if active]
 - Project name: 15px, `Colors.white` (or `Colors.white70` if not active)
 - Active item background: `#6366F1` at 12% opacity
 - Tap ripple: accent color at 12% opacity (Material default)
 
 ### Drawer Footer
-- Padding: `12px` horizontal
+- Padding: `12px` horizontal (legacy exception)
 - Connection status label: 13px, status-colored text (reuse `WsConnectionState.label` and `_stateColor` pattern)
 - Subtle top border: `Colors.white12`, 0.5px
 
