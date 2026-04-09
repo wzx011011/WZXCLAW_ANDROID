@@ -21,7 +21,7 @@ class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
-  final _revealedTimestamps = <int>{};
+  final _revealedMessageIds = <int>{};
 
   List<ChatMessage> _displayMessages = [];
   bool _isStreaming = false;
@@ -107,7 +107,7 @@ class _HomePageState extends State<HomePage>
             onPressed: () {
               Navigator.pop(ctx);
               ChatStore.instance.clearSession();
-              setState(() => _revealedTimestamps.clear());
+              setState(() => _revealedMessageIds.clear());
             },
             child:
                 const Text('清空', style: TextStyle(color: Colors.redAccent)),
@@ -117,12 +117,12 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  void _toggleTimestamp(int index) {
+  void _toggleTimestamp(int msgId) {
     setState(() {
-      if (_revealedTimestamps.contains(index)) {
-        _revealedTimestamps.remove(index);
+      if (_revealedMessageIds.contains(msgId)) {
+        _revealedMessageIds.remove(msgId);
       } else {
-        _revealedTimestamps.add(index);
+        _revealedMessageIds.add(msgId);
       }
     });
   }
@@ -212,7 +212,7 @@ class _HomePageState extends State<HomePage>
     return Align(
       alignment: Alignment.centerRight,
       child: GestureDetector(
-        onTap: () => _toggleTimestamp(index),
+        onTap: () => _toggleTimestamp(msg.id ?? msg.createdAt.millisecondsSinceEpoch),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -226,7 +226,7 @@ class _HomePageState extends State<HomePage>
               child: Text(msg.content,
                   style: const TextStyle(color: Colors.white, fontSize: 15)),
             ),
-            if (_revealedTimestamps.contains(index))
+            if (_revealedMessageIds.contains(msg.id ?? msg.createdAt.millisecondsSinceEpoch))
               Padding(
                 padding: const EdgeInsets.only(top: 4, right: 4),
                 child: Text(_formatTime(msg.createdAt),
@@ -243,7 +243,7 @@ class _HomePageState extends State<HomePage>
     return Align(
       alignment: Alignment.centerLeft,
       child: GestureDetector(
-        onTap: () => _toggleTimestamp(index),
+        onTap: () => _toggleTimestamp(msg.id ?? msg.createdAt.millisecondsSinceEpoch),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -266,7 +266,7 @@ class _HomePageState extends State<HomePage>
                       style: const TextStyle(
                           color: Colors.white70, fontSize: 15)),
             ),
-            if (_revealedTimestamps.contains(index))
+            if (_revealedMessageIds.contains(msg.id ?? msg.createdAt.millisecondsSinceEpoch))
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 12),
                 child: Text(_formatTime(msg.createdAt),
