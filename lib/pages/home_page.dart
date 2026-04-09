@@ -69,7 +69,9 @@ class _HomePageState extends State<HomePage>
         if (token.isNotEmpty) params['token'] = token;
         final fullUrl = uri.replace(queryParameters: params).toString();
         ConnectionManager.instance.connect(fullUrl);
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Auto-connect failed: $e');
+      }
     }
   }
 
