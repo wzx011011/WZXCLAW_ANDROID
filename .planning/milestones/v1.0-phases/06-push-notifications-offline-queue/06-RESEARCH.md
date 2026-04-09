@@ -434,7 +434,7 @@ FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
 | A6 | `firebase-admin` Node.js SDK ^12.x is current | Standard Stack | Medium -- should verify exact latest version before installing |
 | A7 | The `ws` message in `_onMessage` receives Buffer or string depending on ws config | Relay Offline Queue | Verified by reading relay/lib/room.js line 98 -- already handles both types |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Firebase Project Setup: CLI vs Manual**
    - What we know: `flutterfire configure` (the Firebase CLI for Flutter) can automate Firebase project creation and `google-services.json` download.
