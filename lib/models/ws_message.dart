@@ -47,9 +47,6 @@ class WsEvents {
   /// Request the desktop IDE to stop the current AI generation.
   static const String commandStop = 'command:stop';
 
-  /// Register FCM device token with relay server.
-  static const String fcmRegister = 'fcm:register';
-
   /// Application-level ping (not WebSocket protocol-level).
   static const String ping = 'ping';
 

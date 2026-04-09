@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'pages/home_page.dart';
 import 'pages/settings_page.dart';
-import 'services/notification_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  NotificationService.instance.init();
   runApp(const WzxClawApp());
 }
 
@@ -22,7 +20,6 @@ class WzxClawApp extends StatelessWidget {
 
     return MaterialApp(
       title: 'wzxClaw',
-      navigatorKey: NotificationService.navigatorKey,
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bgColor,
