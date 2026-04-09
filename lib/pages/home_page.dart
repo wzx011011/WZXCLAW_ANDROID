@@ -45,8 +45,20 @@ class _HomePageState extends State<HomePage> {
     final serverUrl = prefs.getString('server_url');
     if (serverUrl != null && serverUrl.isNotEmpty) {
       final token = prefs.getString('auth_token') ?? '';
-      final fullUrl = token.isEmpty ? serverUrl : '$serverUrl/?token=$token';
-      ConnectionManager.instance.connect(fullUrl);
+      try {
+        // Build URL with token and role parameters.
+        // Supports both relay URL (wss://host/relay/) and direct URL (ws://host:port).
+        final uri = Uri.parse(serverUrl);
+        final params = Map<String, String>.from(uri.queryParameters);
+        params['role'] = 'mobile';
+        if (token.isNotEmpty) {
+          params['token'] = token;
+        }
+        final fullUrl = uri.replace(queryParameters: params).toString();
+        ConnectionManager.instance.connect(fullUrl);
+      } catch (e) {
+        // Malformed saved URL -- skip auto-connect, user can fix in settings.
+      }
     }
   }
 
