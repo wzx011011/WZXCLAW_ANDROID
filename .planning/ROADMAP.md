@@ -13,11 +13,12 @@
 
 **Requirements:** CONN-01, CONN-02, CONN-03, CONN-04
 
-**Plans:** 2 plans
+**Plans:** 3 plans (2 complete, 1 gap closure)
 
 Plans:
-- [ ] 01-01-PLAN.md — Flutter project skeleton + ConnectionManager (state machine, heartbeat, reconnection, send queue)
-- [ ] 01-02-PLAN.md — UI layer: settings page, connection status bar, home page with test send/receive
+- [x] 01-01-PLAN.md — Flutter project skeleton + ConnectionManager (state machine, heartbeat, reconnection, send queue)
+- [x] 01-02-PLAN.md — UI layer: settings page, connection status bar, home page with test send/receive
+- [ ] 01-03-PLAN.md — Gap closure: Android resource files (styles.xml, launch_background.xml) + INTERNET permission
 
 **Success Criteria:**
 1. Flutter 项目能在 Android 模拟器和真机上运行
