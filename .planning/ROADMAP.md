@@ -62,11 +62,11 @@ Plans:
 
 **Requirements:** CHAT-01, CHAT-02, CHAT-03, CHAT-04, CHAT-05, CHAT-06
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 03-01-PLAN.md — Data layer: ChatMessage model, ChatDatabase (SQLite), ChatStore state manager with streaming accumulation
-- [ ] 03-02-PLAN.md — Chat UI: rewrite HomePage with message bubbles, streaming cursor, tool badges, send/stop, history, clear session
+- [x] 03-01-PLAN.md — Data layer: ChatMessage model, ChatDatabase (SQLite), ChatStore state manager with streaming accumulation
+- [x] 03-02-PLAN.md — Chat UI: rewrite HomePage with message bubbles, streaming cursor, tool badges, send/stop, history, clear session
 
 **Success Criteria:**
 1. 用户输入文本指令，桌面端 AI Agent 收到并回复
