@@ -34,8 +34,7 @@ Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
     importance: channelId == 'error' ? Importance.high : Importance.defaultImportance,
     priority: Priority.high,
   );
-  const iosDetails = null;
-  final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+  final details = NotificationDetails(android: androidDetails);
 
   await plugin.show(
     message.hashCode,
@@ -178,8 +177,7 @@ class NotificationService with WidgetsBindingObserver {
       importance: channelId == 'error' ? Importance.high : Importance.defaultImportance,
       priority: Priority.high,
     );
-    const iosDetails = null;
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    final details = NotificationDetails(android: androidDetails);
 
     _localPlugin.show(
       message.hashCode,
