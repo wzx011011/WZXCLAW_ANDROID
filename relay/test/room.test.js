@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { RoomManager } = require('../lib/room');
 
@@ -59,6 +59,11 @@ describe('RoomManager', () => {
 
   beforeEach(() => {
     roomManager = new RoomManager();
+  });
+
+  afterEach(() => {
+    // Clean up the periodic cleanup interval so the process can exit.
+    roomManager.closeAll();
   });
 
   it('joining a desktop creates a room with desktop slot filled', () => {
@@ -213,5 +218,74 @@ describe('RoomManager', () => {
     assert.equal(c1.length, 1);
     assert.equal(c2.length, 1);
     assert.equal(roomManager.getRoomCount(), 0);
+  });
+
+  it('queues messages when mobile is offline', () => {
+    const { ws: desktop } = createMockWs();
+    roomManager.join('token-1', 'desktop', desktop);
+    // No mobile joined yet.
+
+    desktop._receive(JSON.stringify({ event: 'stream:done', data: { content: 'Task finished' } }));
+
+    // Room should still exist with queued message.
+    assert.equal(roomManager.getRoomCount(), 1);
+  });
+
+  it('flushes queued messages when mobile reconnects', () => {
+    const { ws: desktop } = createMockWs();
+    roomManager.join('token-1', 'desktop', desktop);
+
+    // Queue a message while mobile is offline.
+    desktop._receive(JSON.stringify({ event: 'message:assistant', data: { content: 'Hello' } }));
+
+    // Now mobile connects.
+    const { ws: mobile, sent: mobileSent } = createMockWs();
+    roomManager.join('token-1', 'mobile', mobile);
+
+    // Mobile should receive the queued message.
+    assert.ok(mobileSent.length >= 1);
+    const msg = JSON.parse(mobileSent[mobileSent.length - 1]);
+    assert.equal(msg.event, 'message:assistant');
+  });
+
+  it('stores FCM token from mobile via fcm:register event', () => {
+    const { ws: desktop } = createMockWs();
+    const { ws: mobile } = createMockWs();
+    roomManager.join('token-1', 'desktop', desktop);
+    roomManager.join('token-1', 'mobile', mobile);
+
+    // Mobile sends FCM token registration.
+    mobile._receive(JSON.stringify({ event: 'fcm:register', data: { token: 'test-fcm-token-123' } }));
+
+    // Verify: the fcm:register event should NOT be forwarded to desktop.
+    const { ws: desktop2, sent: desktop2Sent } = createMockWs();
+    const { ws: mobile2 } = createMockWs();
+    roomManager.join('token-2', 'desktop', desktop2);
+    roomManager.join('token-2', 'mobile', mobile2);
+    mobile2._receive(JSON.stringify({ event: 'fcm:register', data: { token: 'abc' } }));
+    assert.equal(desktop2Sent.length, 0);
+  });
+
+  it('does not forward fcm:register events to desktop', () => {
+    const { ws: desktop, sent: desktopSent } = createMockWs();
+    const { ws: mobile } = createMockWs();
+    roomManager.join('token-1', 'desktop', desktop);
+    roomManager.join('token-1', 'mobile', mobile);
+
+    mobile._receive(JSON.stringify({ event: 'fcm:register', data: { token: 'test-token' } }));
+
+    assert.equal(desktopSent.length, 0);
+  });
+
+  it('does not delete room when desktop disconnects but queue has messages', () => {
+    const { ws: desktop } = createMockWs();
+    roomManager.join('token-1', 'desktop', desktop);
+
+    // Queue a message while mobile is offline.
+    desktop._receive(JSON.stringify({ event: 'stream:done', data: { content: 'Done' } }));
+
+    // Desktop disconnects -- room should persist because queue has messages.
+    desktop._disconnect();
+    assert.equal(roomManager.getRoomCount(), 1);
   });
 });

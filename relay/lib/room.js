@@ -1,19 +1,38 @@
 'use strict';
 
 const { log, warn } = require('./logger');
+const fcm = require('./fcm');
+
+/**
+ * Summarize a message data object for push notification body text.
+ * Extracts content/text/message field, truncates to 50 chars.
+ * @param {*} data
+ * @returns {string}
+ */
+function _summarizeMessage(data) {
+  if (!data || typeof data !== 'object') return 'Task completed';
+  const content = data.content || data.text || data.message || '';
+  const text = typeof content === 'string' ? content : JSON.stringify(content);
+  return text.length > 50 ? text.substring(0, 50) + '...' : text || 'Task completed';
+}
 
 /**
  * Manages rooms keyed by token. Each room holds at most one desktop and one mobile WebSocket.
+ * When the mobile is offline, desktop messages are queued and flushed on reconnect.
  */
 class RoomManager {
   constructor() {
-    // Map<string, { desktop: WebSocket|null, mobile: WebSocket|null }>
+    // Map<string, { desktop: WebSocket|null, mobile: WebSocket|null, offlineQueue: Array, fcmToken: string|null }>
     this._rooms = new Map();
+
+    // Periodic cleanup of expired queue entries (24-hour TTL).
+    this._cleanupInterval = setInterval(() => this._cleanupExpiredQueues(), 3600_000); // every hour
   }
 
   /**
    * Add a WebSocket to a room under the given role.
    * If role is "desktop" and a desktop already exists, close the old one with code 4002.
+   * If role is "mobile" and there are queued offline messages, flush them.
    *
    * @param {string} token - Room token.
    * @param {string} role - "desktop" or "mobile".
@@ -21,7 +40,7 @@ class RoomManager {
    */
   join(token, role, ws) {
     if (!this._rooms.has(token)) {
-      this._rooms.set(token, { desktop: null, mobile: null });
+      this._rooms.set(token, { desktop: null, mobile: null, offlineQueue: [], fcmToken: null });
     }
 
     const room = this._rooms.get(token);
@@ -49,6 +68,11 @@ class RoomManager {
     } else {
       // mobile
       room.mobile = ws;
+
+      // Flush any queued offline messages when mobile reconnects.
+      if (room.offlineQueue.length > 0) {
+        this._flushOfflineQueue(room);
+      }
     }
 
     log(`Room [${token}]: ${role} joined (rooms active: ${this._rooms.size})`);
@@ -87,6 +111,8 @@ class RoomManager {
   /**
    * Handle incoming message from a client.
    * - ping/pong: log and consume (do not forward).
+   * - fcm:register (from mobile): store FCM token, do not forward.
+   * - desktop -> mobile: forward if online, queue if offline, trigger push for task-complete events.
    * - Everything else: forward to the paired client.
    *
    * @param {string} token
@@ -113,20 +139,53 @@ class RoomManager {
       return;
     }
 
-    // Forward to the other side.
+    // Get the room.
     const room = this._rooms.get(token);
     if (!room) return;
 
-    const target = role === 'desktop' ? room.mobile : room.desktop;
-    this._forward(ws, target, raw);
-    log(`Room [${token}]: ${role} -> ${role === 'desktop' ? 'mobile' : 'desktop'} event=${event}`);
+    // Handle FCM token registration from mobile (do not forward).
+    if (role === 'mobile' && event === 'fcm:register') {
+      room.fcmToken = parsed.data?.token || null;
+      log(`Room [${token}]: FCM token registered (${room.fcmToken ? room.fcmToken.substring(0, 8) + '...' : 'null'})`);
+      return;
+    }
+
+    if (role === 'desktop') {
+      const mobileOnline = room.mobile && room.mobile.readyState === 1;
+
+      if (mobileOnline) {
+        // Mobile is connected -- forward normally.
+        this._forward(ws, room.mobile, raw);
+      } else {
+        // Mobile is offline -- queue the message.
+        room.offlineQueue.push({ raw, timestamp: Date.now() });
+        log(`Room [${token}]: message queued (offline queue size: ${room.offlineQueue.length})`);
+
+        // Send push notification for task completion events.
+        if (room.fcmToken && (event === 'stream:done' || event === 'message:assistant' || event === 'stream:error')) {
+          const channelId = event === 'stream:error' ? 'error' : 'task_complete';
+          fcm.sendPushNotification(room.fcmToken, {
+            title: 'wzxClaw',
+            body: _summarizeMessage(parsed.data),
+            channelId: channelId,
+          });
+        }
+      }
+
+      log(`Room [${token}]: ${role} -> ${mobileOnline ? 'mobile' : 'queued'} event=${event}`);
+    } else {
+      // Mobile -> desktop: forward normally.
+      const target = room.desktop;
+      this._forward(ws, target, raw);
+      log(`Room [${token}]: ${role} -> desktop event=${event}`);
+    }
   }
 
   /**
    * Handle client disconnection.
    * - Remove the client from its room slot.
    * - Notify the other side with a system message.
-   * - Delete the room if both sides are null.
+   * - Delete the room if both sides are null and queue is empty.
    *
    * @param {string} token
    * @param {string} role
@@ -152,10 +211,48 @@ class RoomManager {
       this._sendSystem(room.desktop, 'system:mobile_disconnected');
     }
 
-    // Clean up empty rooms.
-    if (room.desktop === null && room.mobile === null) {
+    // Clean up empty rooms (also when queue is empty and no FCM token stored).
+    if (room.desktop === null && room.mobile === null && room.offlineQueue.length === 0) {
       this._rooms.delete(token);
       log(`Room [${token}]: room deleted (empty)`);
+    }
+  }
+
+  /**
+   * Flush all queued offline messages to the mobile client.
+   * @param {{ mobile: WebSocket|null, offlineQueue: Array }} room
+   */
+  _flushOfflineQueue(room) {
+    if (!room.mobile || room.mobile.readyState !== 1) return;
+    if (room.offlineQueue.length === 0) return;
+
+    const count = room.offlineQueue.length;
+    log(`Flushing ${count} offline messages`);
+
+    for (const msg of room.offlineQueue) {
+      try {
+        room.mobile.send(msg.raw);
+      } catch (err) {
+        warn(`Flush error: ${err.message}`);
+      }
+    }
+
+    room.offlineQueue = [];
+  }
+
+  /**
+   * Periodically clean up expired queue entries (24-hour TTL).
+   */
+  _cleanupExpiredQueues() {
+    const ttl = 24 * 60 * 60 * 1000; // 24 hours
+    const now = Date.now();
+    for (const [token, room] of this._rooms) {
+      if (room.offlineQueue.length === 0) continue;
+      const before = room.offlineQueue.length;
+      room.offlineQueue = room.offlineQueue.filter(msg => (now - msg.timestamp) < ttl);
+      if (room.offlineQueue.length < before) {
+        log(`Room [${token}]: expired ${before - room.offlineQueue.length} queued messages (24h TTL)`);
+      }
     }
   }
 
@@ -186,6 +283,7 @@ class RoomManager {
    * Close all connections and clear all rooms. Used for graceful shutdown.
    */
   closeAll() {
+    clearInterval(this._cleanupInterval);
     for (const [token, room] of this._rooms) {
       if (room.desktop) {
         try { room.desktop.close(1001, 'server shutdown'); } catch (_) {}

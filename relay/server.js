@@ -4,6 +4,7 @@ const { WebSocketServer } = require('ws');
 const http = require('http');
 const { URL } = require('url');
 const auth = require('./lib/auth');
+const fcm = require('./lib/fcm');
 const { RoomManager } = require('./lib/room');
 const { log, warn, error } = require('./lib/logger');
 
@@ -12,6 +13,9 @@ const PORT = parseInt(process.env.PORT, 10) || 8080;
 
 // -- Initialize auth module --
 auth.init();
+
+// -- Initialize FCM module --
+fcm.init();
 
 // -- Room manager --
 const roomManager = new RoomManager();
