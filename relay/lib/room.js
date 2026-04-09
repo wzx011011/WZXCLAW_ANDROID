@@ -145,7 +145,8 @@ class RoomManager {
 
     // Handle FCM token registration from mobile (do not forward).
     if (role === 'mobile' && event === 'fcm:register') {
-      room.fcmToken = parsed.data?.token || null;
+      const fcmTokenVal = parsed.data?.token || null;
+      room.fcmToken = (typeof fcmTokenVal === 'string' && fcmTokenVal.length <= 512) ? fcmTokenVal : null;
       log(`Room [${token}]: FCM token registered (${room.fcmToken ? room.fcmToken.substring(0, 8) + '...' : 'null'})`);
       return;
     }
