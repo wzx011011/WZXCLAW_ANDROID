@@ -37,12 +37,12 @@ Plans:
 
 **Requirements:** RELAY-01, RELAY-02, RELAY-03, RELAY-05, RELAY-06
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 02-01-PLAN.md — Node.js WebSocket relay server with token auth, room pairing, and message forwarding
-- [ ] 02-02-PLAN.md — Docker deployment (Dockerfile, docker-compose, nginx reverse proxy config)
-- [ ] 02-03-PLAN.md — Flutter app update (URL construction with role=mobile, settings hint)
+- [x] 02-01-PLAN.md — Node.js WebSocket relay server with token auth, room pairing, and message forwarding
+- [x] 02-02-PLAN.md — Docker deployment (Dockerfile, docker-compose, nginx reverse proxy config)
+- [x] 02-03-PLAN.md — Flutter app update (URL construction with role=mobile, settings hint)
 
 **Success Criteria:**
 1. Relay Docker 容器在 NAS 上稳定运行
