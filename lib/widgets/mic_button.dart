@@ -58,15 +58,19 @@ class _MicButtonState extends State<MicButton>
   Future<void> _onLongPressStart(LongPressStartDetails details) async {
     if (!widget.isConnected || widget.isStreaming) return;
 
-    setState(() => _isRecording = true);
-    _pulseController.repeat(reverse: true);
-    HapticFeedback.mediumImpact();
-
-    VoiceInputService.instance.startListening(
+    // Attempt to start listening first, then animate on success
+    await VoiceInputService.instance.startListening(
       onResult: (text) {
         widget.onResult(text);
       },
     );
+
+    // Only animate if the service is actually listening
+    if (VoiceInputService.instance.isListening && mounted) {
+      setState(() => _isRecording = true);
+      _pulseController.repeat(reverse: true);
+      HapticFeedback.mediumImpact();
+    }
   }
 
   Future<void> _onLongPressEnd(LongPressEndDetails details) async {
