@@ -1,7 +1,9 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection_state.dart';
+import '../models/ws_message.dart';
 import '../services/connection_manager.dart';
 
 /// Settings page for configuring WebSocket connection parameters.
@@ -21,9 +23,11 @@ class _SettingsPageState extends State<SettingsPage> {
   final _tokenController = TextEditingController();
   bool _obscureToken = true;
   bool _loading = true;
+  bool _pushEnabled = true;
 
   static const _serverUrlKey = 'server_url';
   static const _authTokenKey = 'auth_token';
+  static const _pushEnabledKey = 'push_notifications_enabled';
 
   @override
   void initState() {
@@ -42,6 +46,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     _serverUrlController.text = prefs.getString(_serverUrlKey) ?? '';
     _tokenController.text = prefs.getString(_authTokenKey) ?? '';
+    _pushEnabled = prefs.getBool(_pushEnabledKey) ?? true;
     setState(() => _loading = false);
   }
 
@@ -72,6 +77,27 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _disconnect() {
     ConnectionManager.instance.disconnect();
+  }
+
+  Future<void> _togglePushNotifications(bool value) async {
+    setState(() => _pushEnabled = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_pushEnabledKey, value);
+
+    if (value) {
+      // Re-enable: get actual FCM token and register with relay.
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        ConnectionManager.instance.send(
+          WsMessage(event: WsEvents.fcmRegister, data: {'token': token}),
+        );
+      }
+    } else {
+      // Disable: send null token to relay to stop push notifications.
+      ConnectionManager.instance.send(
+        const WsMessage(event: WsEvents.fcmRegister, data: {'token': null}),
+      );
+    }
   }
 
   @override
@@ -220,6 +246,20 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     );
                   },
+                ),
+                const SizedBox(height: 24),
+
+                // -- Push notification toggle --
+                SwitchListTile(
+                  title: const Text('推送通知', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  subtitle: const Text('AI 任务完成时发送通知',
+                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  value: _pushEnabled,
+                  activeColor: const Color(0xFF6366F1),
+                  inactiveThumbColor: Colors.white,
+                  inactiveTrackColor: Colors.white24,
+                  onChanged: _togglePushNotifications,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 ),
               ],
             ),
