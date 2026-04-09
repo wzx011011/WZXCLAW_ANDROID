@@ -89,8 +89,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Data layer: Project model + ProjectStore singleton (command sending, response parsing, SharedPreferences persistence)
-- [ ] 04-02-PLAN.md — UI layer: ProjectListTile widget, ProjectDrawer widget, HomePage drawer integration
+- [x] 04-01-PLAN.md — Data layer: Project model + ProjectStore singleton (command sending, response parsing, SharedPreferences persistence)
+- [x] 04-02-PLAN.md — UI layer: ProjectListTile widget, ProjectDrawer widget, HomePage drawer integration
 
 **Success Criteria:**
 1. 能看到桌面端当前打开的项目列表
@@ -107,6 +107,12 @@ Plans:
 **Goal:** 语音输入指令，中文语音识别，识别结果可编辑后发送。
 
 **Requirements:** VOICE-01, VOICE-02, VOICE-03
+
+**Plans:** 2 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Add speech_to_text + permission_handler dependencies, Android manifest permissions, VoiceInputService singleton with tests
+- [ ] 05-02-PLAN.md — MicButton widget (long-press gesture, recording animation), HomePage input bar integration, voice error SnackBar handling
 
 **Success Criteria:**
 1. 按住麦克风按钮说话，松开后识别为文字
