@@ -84,6 +84,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_pushEnabledKey, value);
 
+    if (ConnectionManager.instance.state != WsConnectionState.connected) {
+      // NotificationService._registerTokenOnConnect will handle registration on reconnect.
+      return;
+    }
+
     if (value) {
       // Re-enable: get actual FCM token and register with relay.
       final token = await FirebaseMessaging.instance.getToken();
