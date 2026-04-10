@@ -39,6 +39,13 @@ class ConnectionManager with WidgetsBindingObserver {
       StreamController<WsMessage>.broadcast();
   Stream<WsMessage> get messageStream => _messageController.stream;
 
+  // -- Desktop identity stream --
+  String? _desktopIdentity;
+  String? get desktopIdentity => _desktopIdentity;
+  final StreamController<String?> _desktopIdentityController =
+      StreamController<String?>.broadcast();
+  Stream<String?> get desktopIdentityStream => _desktopIdentityController.stream;
+
   // -- Internal state --
   WsConnectionState _state = WsConnectionState.disconnected;
   WsConnectionState get state => _state;
@@ -107,6 +114,26 @@ class ConnectionManager with WidgetsBindingObserver {
         _onChannelError(error);
       },
     );
+
+    // Mark connected when WebSocket handshake completes.
+    // Do not wait for a message -- relay does not send anything on connect.
+    _channel!.ready.then((_) {
+      if (seq == _connSeq && _state == WsConnectionState.connecting) {
+        _setState(WsConnectionState.connected);
+        _startHeartbeat();
+        _startIdleMonitor();
+        _flushQueue();
+        // Announce mobile identity to desktop
+        _rawSend(jsonEncode({
+          'event': WsEvents.identityMobileAnnounce,
+          'data': {'name': 'wzxClaw Android', 'platform': 'android'},
+        }));
+      }
+    }).catchError((error) {
+      if (seq == _connSeq) {
+        _onChannelError(error);
+      }
+    });
   }
 
   /// Clean disconnect.
@@ -115,9 +142,10 @@ class ConnectionManager with WidgetsBindingObserver {
   /// and clears the send queue.
   void disconnect() {
     _cancelAllTimers();
-    _reconnectAttempt = 0;
     _sendQueue.clear();
     _waitingForPong = false;
+    _desktopIdentity = null;
+    _desktopIdentityController.add(null);
 
     if (_channel != null) {
       try {
@@ -192,25 +220,36 @@ class ConnectionManager with WidgetsBindingObserver {
       _lastMessageTime = DateTime.now();
 
       if (event == WsEvents.pong) {
-        // Pong received -- heartbeat is healthy.
+        // Pong received -- connection is verified bidirectional.
+        // Reset backoff only after real proof the connection works.
         _waitingForPong = false;
         _heartbeatTimeoutTimer?.cancel();
+        _reconnectAttempt = 0;
         return;
       }
 
-      // Transition to connected on first message received.
-      if (_state == WsConnectionState.connecting) {
-        _setState(WsConnectionState.connected);
-        _reconnectAttempt = 0;
-        _startHeartbeat();
-        _startIdleMonitor();
-        _flushQueue();
-
-        // If the server sent a "connected" event, it's just confirmation.
-        // Still broadcast it so subscribers know the session is ready.
+      // Handle desktop identity announcement
+      if (event == WsEvents.identityAnnounce) {
+        final d = json['data'];
+        if (d is Map<String, dynamic>) {
+          _desktopIdentity = d['name'] as String? ?? 'wzxClaw';
+        } else if (d is String) {
+          _desktopIdentity = d;
+        }
+        _desktopIdentityController.add(_desktopIdentity);
+        return;
       }
 
-      // Broadcast all non-pong messages to subscribers.
+      // System events from relay — don't broadcast to chat
+      if (event.startsWith('system:')) {
+        if (event == WsEvents.systemDesktopDisconnected) {
+          _desktopIdentity = null;
+          _desktopIdentityController.add(null);
+        }
+        return;
+      }
+
+      // Broadcast all other messages to subscribers.
       final message = WsMessage.fromJson(json);
       _messageController.add(message);
     } catch (_) {
@@ -281,6 +320,10 @@ class ConnectionManager with WidgetsBindingObserver {
   void _forceReconnect(String reason) {
     // Cancel all timers first.
     _cancelAllTimers();
+
+    // Increment sequence to invalidate stale onDone/onError callbacks
+    // from the channel we are about to close.
+    _connSeq++;
 
     // Close the channel with an abnormal close code.
     if (_channel != null) {

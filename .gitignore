@@ -28,6 +28,18 @@ google-services.json
 *.lock
 !pubspec.lock
 
+# Android local config (machine-specific)
+android/local.properties
+android/.gradle/
+android/.kotlin/
+
+# Claude Code artifacts
+.claude/
+.planning/
+
+# Stray log files
+*.log
+
 # Firebase
 android/app/google-services.json
 fcm-service-account.json

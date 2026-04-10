@@ -11,7 +11,7 @@ class WsMessage {
   /// Payload -- can be a string, map, list, or null.
   final dynamic data;
 
-  WsMessage({required this.event, this.data});
+  const WsMessage({required this.event, this.data});
 
   /// Parse from JSON received over the wire.
   factory WsMessage.fromJson(Map<String, dynamic> json) {
@@ -52,6 +52,19 @@ class WsEvents {
 
   /// Application-level pong (not WebSocket protocol-level).
   static const String pong = 'pong';
+
+  // -- Identity events --
+  /// Desktop announces its identity.
+  static const String identityAnnounce = 'identity:announce';
+
+  /// Mobile announces its identity.
+  static const String identityMobileAnnounce = 'identity:mobile_announce';
+
+  // -- System events from relay --
+  static const String systemDesktopConnected = 'system:desktop_connected';
+  static const String systemDesktopDisconnected = 'system:desktop_disconnected';
+  static const String systemMobileConnected = 'system:mobile_connected';
+  static const String systemMobileDisconnected = 'system:mobile_disconnected';
 
   // -- Incoming (server -> client) --
   /// Connection confirmed by the desktop IDE.

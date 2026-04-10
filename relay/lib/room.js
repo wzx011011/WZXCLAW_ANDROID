@@ -1,20 +1,6 @@
 'use strict';
 
 const { log, warn } = require('./logger');
-const fcm = require('./fcm');
-
-/**
- * Summarize a message data object for push notification body text.
- * Extracts content/text/message field, truncates to 50 chars.
- * @param {*} data
- * @returns {string}
- */
-function _summarizeMessage(data) {
-  if (!data || typeof data !== 'object') return 'Task completed';
-  const content = data.content || data.text || data.message || '';
-  const text = typeof content === 'string' ? content : JSON.stringify(content);
-  return text.length > 50 ? text.substring(0, 50) + '...' : text || 'Task completed';
-}
 
 /**
  * Manages rooms keyed by token. Each room holds at most one desktop and one mobile WebSocket.
@@ -22,7 +8,7 @@ function _summarizeMessage(data) {
  */
 class RoomManager {
   constructor() {
-    // Map<string, { desktop: WebSocket|null, mobile: WebSocket|null, offlineQueue: Array, fcmToken: string|null }>
+    // Map<string, { desktop: WebSocket|null, mobile: WebSocket|null, offlineQueue: Array }>
     this._rooms = new Map();
 
     // Periodic cleanup of expired queue entries (24-hour TTL).
@@ -40,7 +26,7 @@ class RoomManager {
    */
   join(token, role, ws) {
     if (!this._rooms.has(token)) {
-      this._rooms.set(token, { desktop: null, mobile: null, offlineQueue: [], fcmToken: null });
+      this._rooms.set(token, { desktop: null, mobile: null, offlineQueue: [] });
     }
 
     const room = this._rooms.get(token);
@@ -65,6 +51,10 @@ class RoomManager {
       if (!this._rooms.has(token)) {
         this._rooms.set(token, room);
       }
+      // Notify mobile that desktop is now available.
+      if (room.mobile && room.mobile.readyState === 1) {
+        this._sendSystem(room.mobile, 'system:desktop_connected');
+      }
     } else {
       // mobile
       room.mobile = ws;
@@ -72,6 +62,10 @@ class RoomManager {
       // Flush any queued offline messages when mobile reconnects.
       if (room.offlineQueue.length > 0) {
         this._flushOfflineQueue(room);
+      }
+      // Notify desktop that mobile is now available.
+      if (room.desktop && room.desktop.readyState === 1) {
+        this._sendSystem(room.desktop, 'system:mobile_connected');
       }
     }
 
@@ -133,23 +127,19 @@ class RoomManager {
 
     const event = parsed.event;
 
-    // Consume heartbeat messages.
-    if (event === 'ping' || event === 'pong') {
-      log(`Room [${token}]: ${role} heartbeat (${event}), consumed`);
+    // Respond to ping with pong (do not forward).
+    if (event === 'ping') {
+      try { ws.send(JSON.stringify({ event: 'pong' })); } catch (_) {}
+      return;
+    }
+    // Consume pong.
+    if (event === 'pong') {
       return;
     }
 
     // Get the room.
     const room = this._rooms.get(token);
     if (!room) return;
-
-    // Handle FCM token registration from mobile (do not forward).
-    if (role === 'mobile' && event === 'fcm:register') {
-      const fcmTokenVal = parsed.data?.token || null;
-      room.fcmToken = (typeof fcmTokenVal === 'string' && fcmTokenVal.length <= 512) ? fcmTokenVal : null;
-      log(`Room [${token}]: FCM token registered (${room.fcmToken ? room.fcmToken.substring(0, 8) + '...' : 'null'})`);
-      return;
-    }
 
     if (role === 'desktop') {
       const mobileOnline = room.mobile && room.mobile.readyState === 1;
@@ -162,15 +152,6 @@ class RoomManager {
         room.offlineQueue.push({ raw, timestamp: Date.now() });
         log(`Room [${token}]: message queued (offline queue size: ${room.offlineQueue.length})`);
 
-        // Send push notification for task completion events.
-        if (room.fcmToken && (event === 'stream:done' || event === 'message:assistant' || event === 'stream:error')) {
-          const channelId = event === 'stream:error' ? 'error' : 'task_complete';
-          fcm.sendPushNotification(room.fcmToken, {
-            title: 'wzxClaw',
-            body: _summarizeMessage(parsed.data),
-            channelId: channelId,
-          });
-        }
       }
 
       log(`Room [${token}]: ${role} -> ${mobileOnline ? 'mobile' : 'queued'} event=${event}`);

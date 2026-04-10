@@ -199,7 +199,7 @@ class ChatStore {
   /// Stop the current generation.
   void stopGeneration() {
     ConnectionManager.instance
-        .send(const WsMessage(event: WsEvents.commandStop));
+        .send(WsMessage(event: WsEvents.commandStop));
     if (_streamingMessage != null) {
       final completed = _streamingMessage!.copyWith(isStreaming: false);
       _messages.add(completed);

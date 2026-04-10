@@ -10,9 +10,10 @@ import '../models/connection_state.dart';
 /// - reconnecting: yellow dot, "重连中"
 /// - disconnected: red dot, "已断开"
 class ConnectionStatusBar extends StatelessWidget {
-  const ConnectionStatusBar({super.key, required this.state});
+  const ConnectionStatusBar({super.key, required this.state, this.desktopIdentity});
 
   final WsConnectionState state;
+  final String? desktopIdentity;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +42,9 @@ class ConnectionStatusBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Text(
-            state.label,
+            state == WsConnectionState.connected && desktopIdentity != null
+                ? '已连接到 $desktopIdentity'
+                : state.label,
             style: TextStyle(
               color: dotColor,
               fontSize: 13,

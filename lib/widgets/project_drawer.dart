@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/connection_state.dart';
+import '../models/project.dart';
 import '../services/connection_manager.dart';
 import '../services/project_store.dart';
 import 'project_list_tile.dart';

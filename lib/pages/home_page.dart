@@ -29,10 +29,12 @@ class _HomePageState extends State<HomePage>
   bool _isStreaming = false;
   bool _hasConnectedOnce = false;
   WsConnectionState _prevState = WsConnectionState.disconnected;
+  String? _desktopIdentity;
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
   StreamSubscription? _voiceErrorSub;
   StreamSubscription<WsConnectionState>? _connectionStateSub;
+  StreamSubscription<String?>? _desktopIdentitySub;
 
   @override
   void initState() {
@@ -66,20 +68,11 @@ class _HomePageState extends State<HomePage>
     });
 
     _connectionStateSub = ConnectionManager.instance.stateStream.listen((state) {
-      if (mounted && _prevState != WsConnectionState.connected && state == WsConnectionState.connected) {
-        if (_hasConnectedOnce) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('正在同步离线消息...', style: TextStyle(color: Colors.white70)),
-              backgroundColor: Color(0xFF16213E),
-              duration: Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        _hasConnectedOnce = true;
-      }
-      _prevState = state;
+      if (mounted) _prevState = state;
+    });
+
+    _desktopIdentitySub = ConnectionManager.instance.desktopIdentityStream.listen((identity) {
+      if (mounted) setState(() => _desktopIdentity = identity);
     });
   }
 
@@ -89,6 +82,7 @@ class _HomePageState extends State<HomePage>
     _streamingSub?.cancel();
     _voiceErrorSub?.cancel();
     _connectionStateSub?.cancel();
+    _desktopIdentitySub?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -205,7 +199,8 @@ class _HomePageState extends State<HomePage>
             initialData: ConnectionManager.instance.state,
             builder: (context, snapshot) {
               return ConnectionStatusBar(
-                  state: snapshot.data ?? WsConnectionState.disconnected);
+                  state: snapshot.data ?? WsConnectionState.disconnected,
+                  desktopIdentity: _desktopIdentity);
             },
           ),
           Expanded(child: _buildMessageList()),
