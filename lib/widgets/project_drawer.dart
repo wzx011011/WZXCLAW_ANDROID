@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/connection_state.dart';
 import '../models/project.dart';
+import '../models/session_meta.dart';
+import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
 import '../services/project_store.dart';
+import '../services/session_sync_service.dart';
 import 'project_list_tile.dart';
+import 'session_list_tile.dart';
 
 /// Drawer widget containing the project list, empty state, disconnected
 /// state, and a connection status footer.
@@ -19,9 +23,7 @@ class ProjectDrawer extends StatefulWidget {
 }
 
 class _ProjectDrawerState extends State<ProjectDrawer> {
-  List<Project> _projects = [];
-  String? _currentProjectName;
-  bool _isLoading = false;
+  final bool _isLoading = false;
   bool _hasFetchedOnce = false;
 
   @override
@@ -43,7 +45,16 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
       child: Column(
         children: [
           _buildHeader(),
-          Expanded(child: _buildProjectList()),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _buildProjectSection(),
+                const Divider(color: Colors.white12, height: 1),
+                _buildSessionSection(),
+              ],
+            ),
+          ),
           _buildFooter(),
         ],
       ),
@@ -99,7 +110,7 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
     );
   }
 
-  Widget _buildProjectList() {
+  Widget _buildProjectSection() {
     return StreamBuilder<WsConnectionState>(
       stream: ConnectionManager.instance.stateStream,
       initialData: ConnectionManager.instance.state,
@@ -113,88 +124,167 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
           builder: (context, snapshot) {
             final projects = snapshot.data ?? [];
 
-            // Disconnected state
             if (isDisconnected) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    '未连接 -- 无法获取项目',
-                    style: TextStyle(
-                      color: Colors.white38,
-                      fontSize: 14,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  '未连接 -- 无法获取项目',
+                  style: TextStyle(color: Colors.white38, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
               );
             }
 
-            // Empty state
             if (projects.isEmpty && !_isLoading) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '暂无项目',
-                        style: TextStyle(
-                          color: Colors.white38,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '未能获取桌面端项目列表，请确认桌面端已连接',
-                        style: TextStyle(
-                          color: Colors.white24,
-                          fontSize: 13,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  '暂无项目',
+                  style: TextStyle(color: Colors.white38, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
               );
             }
 
-            // Project list with pull-to-refresh
-            return RefreshIndicator(
-              color: const Color(0xFF6366F1),
-              backgroundColor: const Color(0xFF16213E),
-              onRefresh: () async {
-                ProjectStore.instance.fetchProjects();
-                // Wait briefly for the fetch to start, then let stream update UI
-                await Future.delayed(const Duration(milliseconds: 500));
+            return StreamBuilder<String?>(
+              stream: ProjectStore.instance.currentProjectStream,
+              initialData: ProjectStore.instance.currentProjectName,
+              builder: (context, currentSnapshot) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: projects.map((project) {
+                    final isActive = project.name == currentSnapshot.data;
+                    return ProjectListTile(
+                      project: project,
+                      isActive: isActive,
+                      onTap: () {
+                        ProjectStore.instance.switchProject(project.name);
+                        Navigator.pop(context);
+                      },
+                    );
+                  }).toList(),
+                );
               },
-              child: StreamBuilder<String?>(
-                stream: ProjectStore.instance.currentProjectStream,
-                initialData: ProjectStore.instance.currentProjectName,
-                builder: (context, currentSnapshot) {
-                  return ListView.builder(
-                    itemCount: projects.length,
-                    itemBuilder: (context, index) {
-                      final project = projects[index];
-                      final isActive = project.name == currentSnapshot.data;
-                      return ProjectListTile(
-                        project: project,
-                        isActive: isActive,
-                        onTap: () {
-                          ProjectStore.instance.switchProject(project.name);
-                          Navigator.pop(context); // Close drawer per Pitfall 4
-                        },
-                      );
-                    },
-                  );
-                },
-              ),
             );
           },
         );
       },
     );
+  }
+
+  Widget _buildSessionSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.history, size: 16, color: Colors.white54),
+              const SizedBox(width: 8),
+              const Text(
+                '会话',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white54,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              // Refresh button
+              StreamBuilder<bool>(
+                stream: SessionSyncService.instance.loadingStream,
+                initialData: SessionSyncService.instance.isLoading,
+                builder: (context, snapshot) {
+                  final isLoading = snapshot.data ?? false;
+                  return GestureDetector(
+                    onTap: isLoading
+                        ? null
+                        : () => SessionSyncService.instance.fetchSessions(),
+                    child: isLoading
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Colors.white38,
+                            ),
+                          )
+                        : const Icon(
+                            Icons.refresh,
+                            size: 16,
+                            color: Colors.white38,
+                          ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        // Session list
+        StreamBuilder<List<SessionMeta>>(
+          stream: SessionSyncService.instance.sessionsStream,
+          initialData: SessionSyncService.instance.sessions,
+          builder: (context, snapshot) {
+            final sessions = snapshot.data ?? [];
+
+            if (sessions.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text(
+                  '暂无会话记录',
+                  style: TextStyle(color: Colors.white24, fontSize: 13),
+                ),
+              );
+            }
+
+            return StreamBuilder<String?>(
+              stream: SessionSyncService.instance.activeSessionStream,
+              initialData: SessionSyncService.instance.activeSessionId,
+              builder: (context, activeSnapshot) {
+                final activeId = activeSnapshot.data;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: sessions.map((session) {
+                    final isActive = session.id == activeId;
+                    return SessionListTile(
+                      session: session,
+                      isActive: isActive,
+                      onTap: () => _onSessionTap(context, session),
+                    );
+                  }).toList(),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _onSessionTap(BuildContext context, SessionMeta session) async {
+    SessionSyncService.instance.setActiveSession(session.id);
+
+    // Load messages from desktop (or cache)
+    try {
+      final result =
+          await SessionSyncService.instance.loadSessionMessages(session.id);
+      final messages = result['messages'] as List<dynamic>? ?? [];
+      // ignore: use_build_context_synchronously
+      ChatStore.instance.switchToSession(session.id);
+      if (messages.isNotEmpty) {
+        ChatStore.instance.loadFetchedMessages(
+          messages.cast(),
+        );
+      }
+    } catch (_) {
+      // Fallback: just switch to whatever is cached
+      ChatStore.instance.switchToSession(session.id);
+    }
+
+    if (context.mounted) Navigator.pop(context);
   }
 
   Widget _buildFooter() {

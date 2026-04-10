@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
+import 'config/app_colors.dart';
 import 'pages/home_page.dart';
 import 'pages/settings_page.dart';
+import 'services/session_sync_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize session sync service early so it starts listening
+  SessionSyncService.instance;
   runApp(const WzxClawApp());
 }
 
@@ -14,25 +18,25 @@ class WzxClawApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const bgColor = Color(0xFF1A1A2E);
-    const surfaceColor = Color(0xFF16213E);
-    const accentColor = Color(0xFF6366F1);
-
     return MaterialApp(
       title: 'wzxClaw',
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: bgColor,
-        primaryColor: accentColor,
+        scaffoldBackgroundColor: AppColors.bgPrimary,
+        primaryColor: AppColors.accent,
         appBarTheme: const AppBarTheme(
-          backgroundColor: surfaceColor,
-          foregroundColor: Colors.white,
+          backgroundColor: AppColors.bgSecondary,
+          foregroundColor: AppColors.textPrimary,
           elevation: 0,
         ),
         colorScheme: const ColorScheme.dark(
-          primary: accentColor,
-          secondary: accentColor,
-          surface: surfaceColor,
+          primary: AppColors.accent,
+          secondary: AppColors.accent,
+          surface: AppColors.bgSecondary,
+        ),
+        snackBarTheme: const SnackBarThemeData(
+          backgroundColor: AppColors.bgElevated,
+          contentTextStyle: TextStyle(color: AppColors.textPrimary),
         ),
         useMaterial3: true,
       ),

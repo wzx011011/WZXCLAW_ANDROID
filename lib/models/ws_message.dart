@@ -5,7 +5,7 @@ import 'dart:convert';
 /// All messages exchanged between the mobile client and the desktop IDE
 /// follow this JSON structure: `{ "event": "...", "data": ... }`.
 class WsMessage {
-  /// Event name (e.g., "command:send", "stream:text_delta").
+  /// Event name (e.g., "command:send", "stream:agent:text").
   final String event;
 
   /// Payload -- can be a string, map, list, or null.
@@ -41,23 +41,13 @@ class WsEvents {
   WsEvents._();
 
   // -- Outgoing (client -> server) --
-  /// Send a user command to the desktop IDE.
   static const String commandSend = 'command:send';
-
-  /// Request the desktop IDE to stop the current AI generation.
   static const String commandStop = 'command:stop';
-
-  /// Application-level ping (not WebSocket protocol-level).
   static const String ping = 'ping';
-
-  /// Application-level pong (not WebSocket protocol-level).
   static const String pong = 'pong';
 
   // -- Identity events --
-  /// Desktop announces its identity.
   static const String identityAnnounce = 'identity:announce';
-
-  /// Mobile announces its identity.
   static const String identityMobileAnnounce = 'identity:mobile_announce';
 
   // -- System events from relay --
@@ -66,28 +56,38 @@ class WsEvents {
   static const String systemMobileConnected = 'system:mobile_connected';
   static const String systemMobileDisconnected = 'system:mobile_disconnected';
 
-  // -- Incoming (server -> client) --
-  /// Connection confirmed by the desktop IDE.
-  static const String connected = 'connected';
+  // -- Incoming: new stream:agent:* format (desktop broadcasts these) --
+  static const String agentText = 'stream:agent:text';
+  static const String agentToolCall = 'stream:agent:tool_call';
+  static const String agentToolResult = 'stream:agent:tool_result';
+  static const String agentDone = 'stream:agent:done';
+  static const String agentError = 'stream:agent:error';
+  static const String agentCompacted = 'stream:agent:compacted';
+  static const String agentPermissionRequest = 'stream:agent:permission_request';
 
-  /// User message echoed back from the desktop.
-  static const String messageUser = 'message:user';
-
-  /// Full assistant message from the desktop.
-  static const String messageAssistant = 'message:assistant';
-
-  /// Incremental text chunk during streaming.
+  // -- Incoming: legacy stream:* format (backward compat) --
   static const String streamTextDelta = 'stream:text_delta';
-
-  /// Tool use started during AI generation.
   static const String streamToolUseStart = 'stream:tool_use_start';
-
-  /// Generation complete.
   static const String streamDone = 'stream:done';
-
-  /// Error during streaming.
   static const String streamError = 'stream:error';
 
-  /// Full session history sync (array of {role, content}).
+  // -- Incoming: message-level events --
+  static const String connected = 'connected';
+  static const String messageUser = 'message:user';
+  static const String messageAssistant = 'message:assistant';
   static const String sessionMessages = 'session:messages';
+
+  // -- Permission response (outgoing) --
+  static const String permissionResponse = 'permission:response';
+
+  // -- Session sync events (outgoing: mobile -> desktop) --
+  static const String sessionListRequest = 'session:list:request';
+  static const String sessionLoadRequest = 'session:load:request';
+
+  // -- Session sync events (incoming: desktop -> mobile) --
+  static const String sessionListResponse = 'session:list:response';
+  static const String sessionLoadResponse = 'session:load:response';
+  static const String sessionWorkspaceInfo = 'session:workspace:info';
+  static const String sessionActive = 'session:active';
+  static const String sessionError = 'session:error';
 }
