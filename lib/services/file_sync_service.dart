@@ -144,8 +144,8 @@ class FileSyncService {
       final result = await completer.future;
       if (result is List<FileTreeNode>) return result;
       return [];
-    } catch (_) {
-      return [];
+    } catch (e) {
+      rethrow;
     }
   }
 

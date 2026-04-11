@@ -25,11 +25,11 @@ class SessionListTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       onLongPress: () => _showSessionActions(context, session),
-      splashColor: const Color(0xFF6366F1).withOpacity(0.12),
-      highlightColor: const Color(0xFF6366F1).withOpacity(0.12),
+      splashColor: const Color(0xFF6366F1).withValues(alpha: 0.12),
+      highlightColor: const Color(0xFF6366F1).withValues(alpha: 0.12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        color: isActive ? const Color(0xFF6366F1).withOpacity(0.12) : null,
+        color: isActive ? const Color(0xFF6366F1).withValues(alpha: 0.12) : null,
         child: Row(
           children: [
             // Chat bubble icon

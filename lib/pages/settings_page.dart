@@ -358,6 +358,7 @@ class _QrScannerPage extends StatefulWidget {
 class _QrScannerPageState extends State<_QrScannerPage> {
   final MobileScannerController _controller = MobileScannerController();
   bool _torchOn = false;
+  bool _scanned = false;
 
   @override
   void dispose() {
@@ -392,8 +393,10 @@ class _QrScannerPageState extends State<_QrScannerPage> {
           MobileScanner(
             controller: _controller,
             onDetect: (capture) {
+              if (_scanned) return;
               final barcode = capture.barcodes.first;
               if (barcode.rawValue != null) {
+                _scanned = true;
                 _controller.stop();
                 Navigator.pop(context, barcode.rawValue);
               }
@@ -464,8 +467,8 @@ class _ScanFramePainter extends CustomPainter {
     canvas.drawLine(Offset(size.width - cornerLen, 0), Offset(size.width, 0), paint);
     canvas.drawLine(Offset(size.width, 0), Offset(size.width, cornerLen), paint);
     // Bottom-left
-    canvas.drawLine(Offset.zero, Offset(0, size.height - cornerLen), paint);
-    canvas.drawLine(Offset.zero, Offset(cornerLen, size.height), paint);
+    canvas.drawLine(Offset(0, size.height), Offset(0, size.height - cornerLen), paint);
+    canvas.drawLine(Offset(0, size.height), Offset(cornerLen, size.height), paint);
     // Bottom-right
     canvas.drawLine(Offset(size.width, size.height - cornerLen), Offset(size.width, size.height), paint);
     canvas.drawLine(Offset(size.width - cornerLen, size.height), Offset(size.width, size.height), paint);

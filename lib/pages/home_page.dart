@@ -40,7 +40,7 @@ class _HomePageState extends State<HomePage>
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
   StreamSubscription? _voiceErrorSub;
-  StreamSubscription<WsConnectionState>? _connectionStateSub;
+  // _connectionStateSub removed — StreamBuilder handles state reactively
   StreamSubscription<String?>? _desktopIdentitySub;
   StreamSubscription<PermissionRequest?>? _permissionSub;
 
@@ -79,9 +79,6 @@ class _HomePageState extends State<HomePage>
       }
     });
 
-    _connectionStateSub =
-        ConnectionManager.instance.stateStream.listen((_) {});
-
     _desktopIdentitySub =
         ConnectionManager.instance.desktopIdentityStream.listen((identity) {
       if (mounted) setState(() => _desktopIdentity = identity);
@@ -93,7 +90,6 @@ class _HomePageState extends State<HomePage>
     _messagesSub?.cancel();
     _streamingSub?.cancel();
     _voiceErrorSub?.cancel();
-    _connectionStateSub?.cancel();
     _desktopIdentitySub?.cancel();
     _permissionSub?.cancel();
     _inputController.dispose();

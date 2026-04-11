@@ -148,8 +148,11 @@ class RoomManager {
         // Mobile is connected -- forward normally.
         this._forward(ws, room.mobile, raw);
       } else {
-        // Mobile is offline -- queue the message.
+        // Mobile is offline -- queue the message (max 500).
         room.offlineQueue.push({ raw, timestamp: Date.now() });
+        if (room.offlineQueue.length > 500) {
+          room.offlineQueue.shift();
+        }
         log(`Room [${token}]: message queued (offline queue size: ${room.offlineQueue.length})`);
 
       }

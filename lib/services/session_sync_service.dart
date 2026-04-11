@@ -329,12 +329,13 @@ class SessionSyncService {
       event: WsEvents.sessionListRequest,
       data: {'requestId': requestId},
     ));
-    // Timeout
+    // Timeout — also clean up pending request
+    _pendingRequests[requestId] = Completer<dynamic>();
     Future.delayed(const Duration(seconds: 5), () {
       if (_isLoading) {
         _isLoading = false;
         _loadingController.add(false);
-        _completePending(requestId, null, error: 'Timeout');
+        _pendingRequests.remove(requestId);
       }
     });
   }

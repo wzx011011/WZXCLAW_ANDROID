@@ -351,7 +351,7 @@ class ChatStore {
     _messages.clear();
     _streamingMessage = null;
     _isStreaming = false;
-    ChatDatabase.instance.clearAll();
+    ChatDatabase.instance.clearSessionMessages(_currentSessionId ?? '');
     for (final item in data) {
       if (item is! Map) continue;
       final role =
