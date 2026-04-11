@@ -116,4 +116,14 @@ class WsEvents {
   // -- File browsing events (incoming: desktop -> mobile) --
   static const String fileTreeResponse = 'file:tree:response';
   static const String fileReadResponse = 'file:read:response';
+
+  // -- Plan Mode events (incoming: desktop -> mobile) --
+  static const String agentPlanModeEntered = 'stream:agent:plan_mode_entered';
+  static const String agentPlanModeExited = 'stream:agent:plan_mode_exited';
+
+  // -- Plan Mode response (outgoing: mobile -> desktop) --
+  static const String planDecision = 'plan:decision';
+
+  // -- Retry event (incoming: desktop -> mobile) --
+  static const String streamRetrying = 'stream:retrying';
 }

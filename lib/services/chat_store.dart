@@ -41,6 +41,11 @@ class ChatStore {
   final _waitingController = StreamController<bool>.broadcast();
   Stream<bool> get waitingStream => _waitingController.stream;
 
+  final _planModeController =
+      StreamController<Map<String, dynamic>?>.broadcast();
+  Stream<Map<String, dynamic>?> get planModeStream =>
+      _planModeController.stream;
+
   // -- Internal state --
   final List<ChatMessage> _messages = [];
   ChatMessage? _streamingMessage;
@@ -95,6 +100,16 @@ class ChatStore {
           break;
         case WsEvents.agentPermissionRequest:
           _handlePermissionRequest(wsMsg.data);
+          break;
+
+        case WsEvents.agentPlanModeEntered:
+          _handlePlanModeEntered(wsMsg.data);
+          break;
+        case WsEvents.agentPlanModeExited:
+          _handlePlanModeExited(wsMsg.data);
+          break;
+        case WsEvents.streamRetrying:
+          _handleRetrying(wsMsg.data);
           break;
 
         // -- Legacy format (backward compat) --
@@ -190,9 +205,12 @@ class ChatStore {
           _messages[i].toolCallId == toolCallId) {
         final truncatedOutput =
             output.length > 500 ? '${output.substring(0, 500)}…' : output;
+        final summary = _extractResultSummary(
+            _messages[i].toolName ?? '', output, isError);
         _messages[i] = _messages[i].copyWith(
           toolStatus: isError ? ToolCallStatus.error : ToolCallStatus.done,
           toolOutput: truncatedOutput,
+          toolResultSummary: summary,
         );
         ChatDatabase.instance.updateMessage(_messages[i]);
         break;
@@ -320,6 +338,46 @@ class ChatStore {
     ));
     if (!_permissionController.isClosed) {
       _permissionController.add(null); // Clear the request
+    }
+  }
+
+  // ── stream:agent:plan_mode_entered ────────────────────────────────
+  void _handlePlanModeEntered(dynamic data) {
+    final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
+    if (!_planModeController.isClosed) {
+      _planModeController.add(map);
+    }
+  }
+
+  // ── stream:agent:plan_mode_exited ─────────────────────────────────
+  void _handlePlanModeExited(dynamic data) {
+    if (!_planModeController.isClosed) {
+      _planModeController.add(null); // null = plan mode ended
+    }
+  }
+
+  // ── stream:retrying ───────────────────────────────────────────────
+  void _handleRetrying(dynamic data) {
+    final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
+    final attempt = map['attempt'] as int? ?? 1;
+    final max = map['maxAttempts'] as int? ?? 3;
+    final msg = ChatMessage(
+      role: MessageRole.assistant,
+      content: '↻ Retrying ($attempt/$max)...',
+      createdAt: DateTime.now(),
+    );
+    _messages.add(msg);
+    _notifyListeners();
+  }
+
+  /// Send a plan approval/rejection decision back to the desktop.
+  void respondToPlan(bool approved) {
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.planDecision,
+      data: {'approved': approved},
+    ));
+    if (!_planModeController.isClosed) {
+      _planModeController.add(null); // Clear plan mode bar
     }
   }
 
@@ -459,6 +517,7 @@ class ChatStore {
   Future<void> loadHistory() async {
     _messages.clear();
     _messages.addAll(await ChatDatabase.instance.getMessages(limit: 100));
+    _cleanupStaleTools();
     _notifyListeners();
   }
 
@@ -479,6 +538,62 @@ class ChatStore {
     _isWaitingForResponse = value;
     if (!_waitingController.isClosed) {
       _waitingController.add(value);
+    }
+  }
+
+  /// Extract a short one-line summary from tool output for collapsed display.
+  String? _extractResultSummary(String toolName, String output, bool isError) {
+    if (output.isEmpty) return null;
+    if (isError) {
+      // First line of error, truncated
+      final firstLine = output.split('\n').first.trim();
+      return firstLine.length > 60 ? '${firstLine.substring(0, 57)}...' : firstLine;
+    }
+    switch (toolName) {
+      case 'Read':
+      case 'file-read':
+        final lines = '\n'.allMatches(output).length + 1;
+        return '$lines lines';
+      case 'Bash':
+        // Show exit status or first meaningful line
+        final trimmed = output.trim();
+        if (trimmed.isEmpty) return 'done';
+        final firstLine = trimmed.split('\n').first.trim();
+        return firstLine.length > 50 ? '${firstLine.substring(0, 47)}...' : firstLine;
+      case 'Grep':
+        final matches = '\n'.allMatches(output).length + 1;
+        return '$matches matches';
+      case 'Glob':
+        final files = '\n'.allMatches(output).length + 1;
+        return '$files files';
+      case 'Write':
+      case 'file-write':
+        return 'written';
+      case 'Edit':
+      case 'file-edit':
+        return 'applied';
+      case 'WebSearch':
+      case 'web-search':
+        final results = '\n'.allMatches(output).length + 1;
+        return '$results results';
+      default:
+        final firstLine = output.split('\n').first.trim();
+        if (firstLine.isEmpty) return null;
+        return firstLine.length > 50 ? '${firstLine.substring(0, 47)}...' : firstLine;
+    }
+  }
+
+  /// Mark any tool messages stuck in "running" for > 2 minutes as done.
+  /// Called on app startup / history load to clean up missed tool_result events.
+  void _cleanupStaleTools() {
+    final now = DateTime.now();
+    for (int i = 0; i < _messages.length; i++) {
+      if (_messages[i].role == MessageRole.tool &&
+          _messages[i].toolStatus == ToolCallStatus.running &&
+          now.difference(_messages[i].createdAt).inSeconds > 120) {
+        _messages[i] = _messages[i].copyWith(toolStatus: ToolCallStatus.done);
+        ChatDatabase.instance.updateMessage(_messages[i]);
+      }
     }
   }
 
@@ -549,5 +664,6 @@ class ChatStore {
     _streamingController.close();
     _permissionController.close();
     _waitingController.close();
+    _planModeController.close();
   }
 }

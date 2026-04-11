@@ -19,6 +19,7 @@ import '../widgets/animated_message_item.dart';
 import '../widgets/connection_status_bar.dart';
 import '../widgets/mic_button.dart';
 import '../widgets/permission_bar.dart';
+import '../widgets/plan_mode_bar.dart';
 import '../widgets/project_drawer.dart';
 import '../widgets/streaming_shimmer.dart';
 import '../widgets/thinking_indicator.dart';
@@ -351,6 +352,14 @@ class _HomePageState extends State<HomePage> {
           ),
           if (_permissionRequest != null)
             PermissionBar(request: _permissionRequest!),
+          StreamBuilder<Map<String, dynamic>?>(
+            stream: ChatStore.instance.planModeStream,
+            builder: (context, snapshot) {
+              final planData = snapshot.data;
+              if (planData == null) return const SizedBox.shrink();
+              return PlanModeBar(planData: planData);
+            },
+          ),
           _buildInputBar(),
         ],
       ),
