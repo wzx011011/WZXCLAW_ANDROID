@@ -45,6 +45,8 @@ class ChatStore {
   StreamSubscription<WsMessage>? _wsSubscription;
   String? _currentSessionId;
   bool _isBrowsingHistory = false; // true when viewing a historical session
+  String? _lastErrorText;
+  DateTime? _lastErrorTime;
 
   bool get isStreaming => _isStreaming;
   String? get currentSessionId => _currentSessionId;
@@ -234,6 +236,19 @@ class ChatStore {
     final errorText = map['error'] as String? ?? data.toString();
     final recoverable = map['recoverable'] as bool? ?? false;
 
+    // Skip recoverable errors silently
+    if (recoverable && _streamingMessage == null) return;
+
+    // Dedup: skip identical errors within 5 seconds
+    final now = DateTime.now();
+    if (_lastErrorText == errorText &&
+        _lastErrorTime != null &&
+        now.difference(_lastErrorTime!).inSeconds < 5) {
+      return;
+    }
+    _lastErrorText = errorText;
+    _lastErrorTime = now;
+
     if (_streamingMessage != null) {
       final completed = _streamingMessage!.copyWith(
         content: _streamingMessage!.content +
@@ -244,14 +259,13 @@ class ChatStore {
       ChatDatabase.instance.insertMessage(completed);
       _streamingMessage = null;
     } else {
-      // Standalone error (no streaming in progress)
+      // Standalone error — show but don't persist to avoid clutter on restart
       final errorMsg = ChatMessage(
         role: MessageRole.assistant,
         content: '⚠ Error: $errorText',
         createdAt: DateTime.now(),
       );
       _messages.add(errorMsg);
-      ChatDatabase.instance.insertMessage(errorMsg);
     }
     _isStreaming = false;
     _notifyListeners();

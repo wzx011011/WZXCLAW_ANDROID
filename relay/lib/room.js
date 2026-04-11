@@ -247,9 +247,12 @@ class RoomManager {
     if (ws && ws.readyState === 1) {
       try {
         ws.send(JSON.stringify({ event }));
-      } catch (_) {
-        // Ignore send errors on closing sockets.
+        log(`[_sendSystem] sent ${event} to client (readyState=${ws.readyState})`);
+      } catch (err) {
+        log(`[_sendSystem] failed to send ${event}: ${err.message}`);
       }
+    } else {
+      log(`[_sendSystem] skipped ${event} — ws is ${ws ? 'readyState=' + ws.readyState : 'null'}`);
     }
   }
 

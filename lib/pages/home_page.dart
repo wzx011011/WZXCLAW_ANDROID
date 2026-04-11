@@ -161,6 +161,59 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  void _showMessageActions(ChatMessage msg) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E2E),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.copy, color: Colors.white70),
+              title: const Text('复制文本', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: msg.content));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已复制'),
+                    duration: Duration(seconds: 1),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
+            if (msg.role == MessageRole.user)
+              ListTile(
+                leading: const Icon(Icons.refresh, color: Colors.white70),
+                title: const Text('重新发送', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ChatStore.instance.sendMessage(msg.content);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.white70),
+              title: const Text('分享', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                Clipboard.setData(ClipboardData(text: msg.content));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('已复制到剪贴板'),
+                    duration: Duration(seconds: 1),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -297,7 +350,9 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildUserBubble(ChatMessage msg) {
     final screenWidth = MediaQuery.of(context).size.width;
-    return Align(
+    return GestureDetector(
+      onLongPress: () => _showMessageActions(msg),
+      child: Align(
       alignment: Alignment.centerRight,
       child: Container(
         constraints: BoxConstraints(maxWidth: screenWidth * 0.80),
@@ -316,13 +371,16 @@ class _HomePageState extends State<HomePage>
             style: const TextStyle(
                 color: Colors.white, fontSize: 14, height: 1.5)),
       ),
+      ),
     );
   }
 
   // ── Assistant block with Markdown ──────────────────────────────────
 
   Widget _buildAssistantBlock(ChatMessage msg) {
-    return Container(
+    return GestureDetector(
+      onLongPress: () => _showMessageActions(msg),
+      child: Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 3),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -359,6 +417,7 @@ class _HomePageState extends State<HomePage>
               ),
             ),
         ],
+      ),
       ),
     );
   }
@@ -469,7 +528,9 @@ class _HomePageState extends State<HomePage>
                     style: const TextStyle(
                         color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: isConnected ? '输入指令...' : '未连接',
+                      hintText: isConnected
+                          ? (_desktopIdentity != null ? '$_desktopIdentity — 输入指令...' : '输入指令...')
+                          : '未连接',
                       hintStyle:
                           const TextStyle(color: AppColors.textMuted),
                       filled: true,
@@ -483,9 +544,10 @@ class _HomePageState extends State<HomePage>
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 10),
                     ),
-                    onSubmitted: isConnected ? (_) => _sendMessage() : null,
-                    maxLines: null,
-                    textInputAction: TextInputAction.send,
+                    maxLines: 5,
+                    minLines: 1,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
                   ),
                 ),
                 const SizedBox(width: 8),

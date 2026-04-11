@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/connection_state.dart';
 import '../services/connection_manager.dart';
+import '../services/session_sync_service.dart';
 
 /// Settings page for configuring WebSocket connection parameters.
 class SettingsPage extends StatefulWidget {
@@ -93,9 +94,17 @@ class _SettingsPageState extends State<SettingsPage> {
       }
       try {
         final uri = Uri.parse(result);
-        _serverUrlController.text = uri.origin + uri.path;
+        _serverUrlController.text = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
         _tokenController.text = uri.queryParameters['token'] ?? '';
         setState(() {});
+        // Auto-save and connect after successful scan
+        _saveValues();
+        _connect();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('正在连接...'), duration: Duration(seconds: 2)),
+          );
+        }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('二维码内容无法解析'), duration: Duration(seconds: 2)),
@@ -276,6 +285,49 @@ class _SettingsPageState extends State<SettingsPage> {
                   inactiveTrackColor: Colors.white24,
                   onChanged: _togglePushNotifications,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                ),
+                const SizedBox(height: 24),
+
+                // -- Workspace info --
+                StreamBuilder<WorkspaceInfo?>(
+                  stream: SessionSyncService.instance.workspaceInfoStream,
+                  initialData: SessionSyncService.instance.workspaceInfo,
+                  builder: (context, snapshot) {
+                    final info = snapshot.data;
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: surfaceColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('工作区', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          Text(
+                            info != null ? info.workspaceName : '未连接',
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                          ),
+                          if (info != null)
+                            Text(
+                              info.workspacePath,
+                              style: const TextStyle(color: Colors.white38, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+
+                // -- Version info --
+                const Center(
+                  child: Text(
+                    'wzxClaw Android v2.0',
+                    style: TextStyle(color: Colors.white24, fontSize: 12),
+                  ),
                 ),
               ],
             ),

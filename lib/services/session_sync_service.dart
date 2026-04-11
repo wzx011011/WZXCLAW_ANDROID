@@ -22,11 +22,22 @@ class WorkspaceInfo {
   });
 }
 
+class WorkspaceItem {
+  final String path;
+  final String name;
+  final bool isCurrent;
+
+  const WorkspaceItem({
+    required this.path,
+    required this.name,
+    required this.isCurrent,
+  });
+}
+
 /// Singleton service that syncs session data from the desktop wzxClaw IDE.
 ///
-/// Follows the [ProjectStore] pattern: subscribes to
-/// [ConnectionManager.messageStream], exposes reactive streams, and
-/// caches data locally in SQLite via [ChatDatabase].
+/// Subscribes to [ConnectionManager.messageStream], exposes reactive streams,
+/// and caches data locally in SQLite via [ChatDatabase].
 class SessionSyncService {
   // -- Singleton --
   static final SessionSyncService _instance = SessionSyncService._();
@@ -50,6 +61,11 @@ class SessionSyncService {
 
   final _loadingController = StreamController<bool>.broadcast();
   Stream<bool> get loadingStream => _loadingController.stream;
+
+  final _workspacesController = StreamController<List<WorkspaceItem>>.broadcast();
+  Stream<List<WorkspaceItem>> get workspacesStream => _workspacesController.stream;
+  List<WorkspaceItem> _workspaces = [];
+  List<WorkspaceItem> get workspaces => List.unmodifiable(_workspaces);
 
   // -- Internal state --
   List<SessionMeta> _sessions = [];
@@ -103,6 +119,21 @@ class SessionSyncService {
         break;
       case WsEvents.sessionError:
         _handleSessionError(msg.data);
+        break;
+      case WsEvents.sessionCreateResponse:
+        _handleSessionCreateResponse(msg.data);
+        break;
+      case WsEvents.sessionDeleteResponse:
+        _handleSessionDeleteResponse(msg.data);
+        break;
+      case WsEvents.sessionRenameResponse:
+        _handleSessionRenameResponse(msg.data);
+        break;
+      case WsEvents.workspaceListResponse:
+        _handleWorkspaceListResponse(msg.data);
+        break;
+      case WsEvents.workspaceSwitchResponse:
+        _handleWorkspaceSwitchResponse(msg.data);
         break;
     }
   }
@@ -181,18 +212,24 @@ class SessionSyncService {
 
   void _handleWorkspaceInfo(dynamic data) {
     if (data is! Map) return;
+    final newPath = data['workspacePath'] as String? ?? '';
+
+    // Clear old sessions if workspace changed
+    if (_workspaceInfo != null && _workspaceInfo!.workspacePath != newPath) {
+      _sessions = [];
+      _sessionsController.add([]);
+    }
+
     _workspaceInfo = WorkspaceInfo(
       workspaceName: data['workspaceName'] as String? ?? '',
-      workspacePath: data['workspacePath'] as String? ?? '',
+      workspacePath: newPath,
       activeSessionId: data['activeSessionId'] as String?,
-      sessionCount: data['sessionCount'] as int? ?? 0,
+      sessionCount: (data['sessionCount'] as num?)?.toInt() ?? 0,
     );
     _workspaceInfoController.add(_workspaceInfo);
 
-    // Auto-fetch sessions when we know the workspace
-    if (_sessions.isEmpty) {
-      fetchSessions();
-    }
+    // Always fetch sessions when workspace info arrives
+    fetchSessions();
   }
 
   void _handleSessionActive(dynamic data) {
@@ -208,9 +245,74 @@ class SessionSyncService {
     if (data is! Map) return;
     final requestId = data['requestId'] as String? ?? '';
     final error = data['error'] as String? ?? 'Unknown error';
+    final code = data['code'] as String? ?? '';
     _isLoading = false;
     _loadingController.add(false);
+    // Log for debugging — errors with no pending request were silently dropped
+    // ignore: avoid_print
+    print('[SessionSync] error: $error (code=$code, requestId=$requestId)');
     _completePending(requestId, null, error: error);
+  }
+
+  void _handleSessionCreateResponse(dynamic data) {
+    if (data is! Map) return;
+    final requestId = data['requestId'] as String? ?? '';
+    final sessionData = data['session'];
+    if (sessionData is Map) {
+      final session = SessionMeta(
+        id: sessionData['id'] as String? ?? '',
+        title: sessionData['title'] as String? ?? 'New Session',
+        createdAt: (sessionData['createdAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+        updatedAt: (sessionData['updatedAt'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+        messageCount: (sessionData['messageCount'] as num?)?.toInt() ?? 0,
+        workspacePath: _workspaceInfo?.workspacePath ?? '',
+        workspaceName: _workspaceInfo?.workspaceName ?? '',
+      );
+      _sessions.insert(0, session);
+      _sessionsController.add(List.unmodifiable(_sessions));
+      ChatDatabase.instance.upsertSessions([session]);
+    }
+    _completePending(requestId, sessionData);
+  }
+
+  void _handleSessionDeleteResponse(dynamic data) {
+    if (data is! Map) return;
+    final requestId = data['requestId'] as String? ?? '';
+    final success = data['success'] as bool? ?? false;
+    if (success) {
+      // Refresh the list
+      fetchSessions();
+    }
+    _completePending(requestId, {'success': success});
+  }
+
+  void _handleSessionRenameResponse(dynamic data) {
+    if (data is! Map) return;
+    final requestId = data['requestId'] as String? ?? '';
+    final success = data['success'] as bool? ?? false;
+    if (success) {
+      fetchSessions();
+    }
+    _completePending(requestId, {'success': success});
+  }
+
+  void _handleWorkspaceListResponse(dynamic data) {
+    if (data is! Map) return;
+    final requestId = data['requestId'] as String? ?? '';
+    final rawWorkspaces = data['workspaces'] as List? ?? [];
+    _workspaces = rawWorkspaces.whereType<Map>().map((w) => WorkspaceItem(
+      path: w['path'] as String? ?? '',
+      name: w['name'] as String? ?? '',
+      isCurrent: w['isCurrent'] as bool? ?? false,
+    )).toList();
+    _workspacesController.add(List.unmodifiable(_workspaces));
+    _completePending(requestId, _workspaces);
+  }
+
+  void _handleWorkspaceSwitchResponse(dynamic data) {
+    if (data is! Map) return;
+    final requestId = data['requestId'] as String? ?? '';
+    _completePending(requestId, data);
   }
 
   // -- Public API --
@@ -308,6 +410,128 @@ class SessionSyncService {
   void setActiveSession(String? sessionId) {
     _activeSessionId = sessionId;
     _activeSessionController.add(_activeSessionId);
+  }
+
+  /// Create a new session on the desktop.
+  Future<Map<String, dynamic>?> createSession({String? title}) async {
+    if (ConnectionManager.instance.state != WsConnectionState.connected) return null;
+    final requestId = _nextRequestId();
+    final completer = Completer<dynamic>();
+    _pendingRequests[requestId] = completer;
+
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.sessionCreateRequest,
+      data: {'requestId': requestId, if (title != null) 'title': title},
+    ));
+
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!completer.isCompleted) {
+        _pendingRequests.remove(requestId);
+        completer.completeError('Timeout creating session');
+      }
+    });
+
+    try {
+      final result = await completer.future;
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Delete a session on the desktop.
+  Future<bool> deleteSession(String sessionId) async {
+    if (ConnectionManager.instance.state != WsConnectionState.connected) return false;
+    final requestId = _nextRequestId();
+    final completer = Completer<dynamic>();
+    _pendingRequests[requestId] = completer;
+
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.sessionDeleteRequest,
+      data: {'requestId': requestId, 'sessionId': sessionId},
+    ));
+
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!completer.isCompleted) {
+        _pendingRequests.remove(requestId);
+        completer.completeError('Timeout deleting session');
+      }
+    });
+
+    try {
+      final result = await completer.future;
+      if (result is Map) return result['success'] as bool? ?? false;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Rename a session on the desktop.
+  Future<bool> renameSession(String sessionId, String title) async {
+    if (ConnectionManager.instance.state != WsConnectionState.connected) return false;
+    final requestId = _nextRequestId();
+    final completer = Completer<dynamic>();
+    _pendingRequests[requestId] = completer;
+
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.sessionRenameRequest,
+      data: {'requestId': requestId, 'sessionId': sessionId, 'title': title},
+    ));
+
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!completer.isCompleted) {
+        _pendingRequests.remove(requestId);
+        completer.completeError('Timeout renaming session');
+      }
+    });
+
+    try {
+      final result = await completer.future;
+      if (result is Map) return result['success'] as bool? ?? false;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fetch list of recent workspaces from the desktop.
+  Future<void> fetchWorkspaces() async {
+    if (ConnectionManager.instance.state != WsConnectionState.connected) return;
+    final requestId = _nextRequestId();
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.workspaceListRequest,
+      data: {'requestId': requestId},
+    ));
+  }
+
+  /// Switch the desktop to a different workspace.
+  Future<bool> switchWorkspace(String workspacePath) async {
+    if (ConnectionManager.instance.state != WsConnectionState.connected) return false;
+    final requestId = _nextRequestId();
+    final completer = Completer<dynamic>();
+    _pendingRequests[requestId] = completer;
+
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.workspaceSwitchRequest,
+      data: {'requestId': requestId, 'workspacePath': workspacePath},
+    ));
+
+    Future.delayed(const Duration(seconds: 10), () {
+      if (!completer.isCompleted) {
+        _pendingRequests.remove(requestId);
+        completer.completeError('Timeout switching workspace');
+      }
+    });
+
+    try {
+      final result = await completer.future;
+      if (result is Map) return result['success'] as bool? ?? false;
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   // -- Local cache --
@@ -428,5 +652,6 @@ class SessionSyncService {
     _activeSessionController.close();
     _workspaceInfoController.close();
     _loadingController.close();
+    _workspacesController.close();
   }
 }

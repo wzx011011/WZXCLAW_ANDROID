@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import 'config/app_colors.dart';
+import 'pages/file_browser_page.dart';
 import 'pages/home_page.dart';
 import 'pages/settings_page.dart';
+import 'services/file_sync_service.dart';
 import 'services/session_sync_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize session sync service early so it starts listening
+  // Initialize services early so they start listening
   SessionSyncService.instance;
+  FileSyncService.instance;
   runApp(const WzxClawApp());
 }
 
@@ -44,6 +47,7 @@ class WzxClawApp extends StatelessWidget {
       routes: {
         '/': (context) => const HomePage(),
         '/settings': (context) => const SettingsPage(),
+        '/files': (context) => const FileBrowserPage(),
       },
     );
   }

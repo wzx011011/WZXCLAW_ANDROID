@@ -30,9 +30,9 @@ class SessionMeta {
       workspacePath: workspacePath,
       workspaceName: workspaceName,
       title: json['title'] as String? ?? 'Untitled',
-      createdAt: json['createdAt'] as int? ?? 0,
-      updatedAt: json['updatedAt'] as int? ?? 0,
-      messageCount: json['messageCount'] as int? ?? 0,
+      createdAt: (json['createdAt'] as num?)?.toInt() ?? 0,
+      updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
+      messageCount: (json['messageCount'] as num?)?.toInt() ?? 0,
     );
   }
 

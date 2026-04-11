@@ -29,6 +29,10 @@ class _ToolCardState extends State<ToolCard>
     if (widget.message.toolStatus == ToolCallStatus.running) {
       _spinController.repeat();
     }
+    // Auto-expand on error
+    if (widget.message.toolStatus == ToolCallStatus.error) {
+      _expanded = true;
+    }
   }
 
   @override
@@ -38,6 +42,10 @@ class _ToolCardState extends State<ToolCard>
       if (!_spinController.isAnimating) _spinController.repeat();
     } else {
       _spinController.stop();
+      // Auto-expand when error arrives
+      if (widget.message.toolStatus == ToolCallStatus.error && !_expanded) {
+        setState(() => _expanded = true);
+      }
     }
   }
 
@@ -99,6 +107,18 @@ class _ToolCardState extends State<ToolCard>
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                        if ((msg.toolName == 'Write' || msg.toolName == 'FileWrite' ||
+                             msg.toolName == 'Edit' || msg.toolName == 'FileEdit') &&
+                            msg.toolOutput != null && msg.toolOutput!.isNotEmpty)
+                          Text(
+                            msg.toolStatus == ToolCallStatus.done ? '✓ 文件已修改' : '修改中...',
+                            style: TextStyle(
+                              color: msg.toolStatus == ToolCallStatus.error
+                                  ? AppColors.toolError
+                                  : AppColors.textMuted,
+                              fontSize: 10,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -119,8 +139,11 @@ class _ToolCardState extends State<ToolCard>
             ),
           ),
           // -- Expanded details --
-          if (_expanded && hasDetails)
-            Container(
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: _expanded && hasDetails
+              ? Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
               child: Column(
@@ -176,7 +199,9 @@ class _ToolCardState extends State<ToolCard>
                   ],
                 ],
               ),
-            ),
+            )
+              : const SizedBox.shrink(),
+          ),
         ],
       ),
     );

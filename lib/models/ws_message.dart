@@ -90,4 +90,30 @@ class WsEvents {
   static const String sessionWorkspaceInfo = 'session:workspace:info';
   static const String sessionActive = 'session:active';
   static const String sessionError = 'session:error';
+
+  // -- Session CRUD events (outgoing: mobile -> desktop) --
+  static const String sessionCreateRequest = 'session:create:request';
+  static const String sessionDeleteRequest = 'session:delete:request';
+  static const String sessionRenameRequest = 'session:rename:request';
+
+  // -- Session CRUD events (incoming: desktop -> mobile) --
+  static const String sessionCreateResponse = 'session:create:response';
+  static const String sessionDeleteResponse = 'session:delete:response';
+  static const String sessionRenameResponse = 'session:rename:response';
+
+  // -- Workspace events (outgoing: mobile -> desktop) --
+  static const String workspaceListRequest = 'workspace:list:request';
+  static const String workspaceSwitchRequest = 'workspace:switch:request';
+
+  // -- Workspace events (incoming: desktop -> mobile) --
+  static const String workspaceListResponse = 'workspace:list:response';
+  static const String workspaceSwitchResponse = 'workspace:switch:response';
+
+  // -- File browsing events (outgoing: mobile -> desktop) --
+  static const String fileTreeRequest = 'file:tree:request';
+  static const String fileReadRequest = 'file:read:request';
+
+  // -- File browsing events (incoming: desktop -> mobile) --
+  static const String fileTreeResponse = 'file:tree:response';
+  static const String fileReadResponse = 'file:read:response';
 }

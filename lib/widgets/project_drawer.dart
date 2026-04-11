@@ -1,41 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../models/connection_state.dart';
-import '../models/project.dart';
 import '../models/session_meta.dart';
 import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
-import '../services/project_store.dart';
 import '../services/session_sync_service.dart';
-import 'project_list_tile.dart';
 import 'session_list_tile.dart';
 
-/// Drawer widget containing the project list, empty state, disconnected
-/// state, and a connection status footer.
+/// Drawer widget displaying the current desktop workspace and its sessions.
 ///
-/// Subscribes to [ProjectStore] and [ConnectionManager] streams to
-/// reactively display the project list and connection status.
-class ProjectDrawer extends StatefulWidget {
+/// Subscribes to [SessionSyncService] for workspace info and session list,
+/// and [ConnectionManager] for connection status.
+class ProjectDrawer extends StatelessWidget {
   const ProjectDrawer({super.key});
-
-  @override
-  State<ProjectDrawer> createState() => _ProjectDrawerState();
-}
-
-class _ProjectDrawerState extends State<ProjectDrawer> {
-  final bool _isLoading = false;
-  bool _hasFetchedOnce = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Auto-fetch on first open if list is empty
-    if (ProjectStore.instance.projects.isEmpty && !_hasFetchedOnce) {
-      _hasFetchedOnce = true;
-      // Delay to allow drawer animation to start
-      Future.microtask(() => ProjectStore.instance.fetchProjects());
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +26,9 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _buildProjectSection(),
+                _buildWorkspaceSection(),
+                const Divider(color: Colors.white12, height: 1),
+                _buildFileBrowseEntry(context),
                 const Divider(color: Colors.white12, height: 1),
                 _buildSessionSection(),
               ],
@@ -62,55 +41,53 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
   }
 
   Widget _buildHeader() {
-    return Container(
-      height: 120,
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: const BoxDecoration(
-        color: Color(0xFF16213E),
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFF6366F1),
-            width: 3,
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            '项目',
-            style: TextStyle(
-              fontSize: 20,
-              color: Colors.white,
-              fontWeight: FontWeight.w500,
+    return StreamBuilder<WorkspaceInfo?>(
+      stream: SessionSyncService.instance.workspaceInfoStream,
+      initialData: SessionSyncService.instance.workspaceInfo,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        return Container(
+          height: 120,
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          decoration: const BoxDecoration(
+            color: Color(0xFF16213E),
+            border: Border(
+              bottom: BorderSide(
+                color: Color(0xFF6366F1),
+                width: 3,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          StreamBuilder<String?>(
-            stream: ProjectStore.instance.currentProjectStream,
-            initialData: ProjectStore.instance.currentProjectName,
-            builder: (context, snapshot) {
-              final name = snapshot.data;
-              return Text(
-                name != null && name.isNotEmpty
-                    ? name
-                    : '未选择项目',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                '工作区',
+                style: TextStyle(
+                  fontSize: 20,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                info?.workspaceName ?? '未连接',
                 style: const TextStyle(
                   fontSize: 14,
                   color: Colors.white70,
                 ),
                 overflow: TextOverflow.ellipsis,
-              );
-            },
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildProjectSection() {
+  Widget _buildWorkspaceSection() {
     return StreamBuilder<WsConnectionState>(
       stream: ConnectionManager.instance.stateStream,
       initialData: ConnectionManager.instance.state,
@@ -118,56 +95,69 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
         final isDisconnected =
             stateSnapshot.data == WsConnectionState.disconnected;
 
-        return StreamBuilder<List<Project>>(
-          stream: ProjectStore.instance.projectsStream,
-          initialData: ProjectStore.instance.projects,
+        if (isDisconnected) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              '未连接 -- 无法获取工作区',
+              style: TextStyle(color: Colors.white38, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+
+        return StreamBuilder<WorkspaceInfo?>(
+          stream: SessionSyncService.instance.workspaceInfoStream,
+          initialData: SessionSyncService.instance.workspaceInfo,
           builder: (context, snapshot) {
-            final projects = snapshot.data ?? [];
+            final info = snapshot.data;
 
-            if (isDisconnected) {
-              return const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  '未连接 -- 无法获取项目',
-                  style: TextStyle(color: Colors.white38, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-              );
-            }
-
-            if (projects.isEmpty && !_isLoading) {
+            if (info == null) {
               return const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  '暂无项目',
+                  '等待桌面端推送工作区信息...',
                   style: TextStyle(color: Colors.white38, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
               );
             }
 
-            return StreamBuilder<String?>(
-              stream: ProjectStore.instance.currentProjectStream,
-              initialData: ProjectStore.instance.currentProjectName,
-              builder: (context, currentSnapshot) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: projects.map((project) {
-                    final isActive = project.name == currentSnapshot.data;
-                    return ProjectListTile(
-                      project: project,
-                      isActive: isActive,
-                      onTap: () {
-                        ProjectStore.instance.switchProject(project.name);
-                        Navigator.pop(context);
-                      },
-                    );
-                  }).toList(),
-                );
-              },
+            return ListTile(
+              leading: const Icon(Icons.folder_open,
+                  color: Color(0xFF6366F1), size: 20,),
+              title: Text(
+                info.workspaceName,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                info.workspacePath,
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+              trailing: Text(
+                '${info.sessionCount} 会话',
+                style: const TextStyle(color: Colors.white24, fontSize: 12),
+              ),
             );
           },
         );
+      },
+    );
+  }
+
+  Widget _buildFileBrowseEntry(BuildContext context) {
+    return ListTile(
+      leading:
+          const Icon(Icons.folder_open, color: Colors.white54, size: 20),
+      title: const Text('浏览文件',
+          style: TextStyle(color: Colors.white70, fontSize: 14),),
+      dense: true,
+      onTap: () {
+        Navigator.pop(context);
+        Navigator.pushNamed(context, '/files');
       },
     );
   }
@@ -193,6 +183,25 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
                 ),
               ),
               const Spacer(),
+              // New session button
+              Builder(
+                builder: (context) => GestureDetector(
+                  onTap: () async {
+                    final result = await SessionSyncService.instance.createSession();
+                    if (result != null) {
+                      final sessionId = result['id'] as String?;
+                      if (sessionId != null) {
+                        ChatStore.instance.switchToSession(sessionId);
+                        if (context.mounted) Navigator.pop(context);
+                      }
+                    }
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: Icon(Icons.add, size: 16, color: Colors.white38),
+                  ),
+                ),
+              ),
               // Refresh button
               StreamBuilder<bool>(
                 stream: SessionSyncService.instance.loadingStream,
@@ -272,12 +281,9 @@ class _ProjectDrawerState extends State<ProjectDrawer> {
       final result =
           await SessionSyncService.instance.loadSessionMessages(session.id);
       final messages = result['messages'] as List<dynamic>? ?? [];
-      // ignore: use_build_context_synchronously
       ChatStore.instance.switchToSession(session.id);
       if (messages.isNotEmpty) {
-        ChatStore.instance.loadFetchedMessages(
-          messages.cast(),
-        );
+        ChatStore.instance.loadFetchedMessages(messages.cast());
       }
     } catch (_) {
       // Fallback: just switch to whatever is cached
