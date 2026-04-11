@@ -38,6 +38,9 @@ class ChatStore {
   Stream<PermissionRequest?> get permissionStream =>
       _permissionController.stream;
 
+  final _waitingController = StreamController<bool>.broadcast();
+  Stream<bool> get waitingStream => _waitingController.stream;
+
   // -- Internal state --
   final List<ChatMessage> _messages = [];
   ChatMessage? _streamingMessage;
@@ -45,10 +48,12 @@ class ChatStore {
   StreamSubscription<WsMessage>? _wsSubscription;
   String? _currentSessionId;
   bool _isBrowsingHistory = false; // true when viewing a historical session
+  bool _isWaitingForResponse = false;
   String? _lastErrorText;
   DateTime? _lastErrorTime;
 
   bool get isStreaming => _isStreaming;
+  bool get isWaitingForResponse => _isWaitingForResponse;
   String? get currentSessionId => _currentSessionId;
   bool get isBrowsingHistory => _isBrowsingHistory;
 
@@ -125,6 +130,7 @@ class ChatStore {
   void _handleAgentText(dynamic data) {
     final content = _extractContent(data);
     if (_streamingMessage == null) {
+      _setWaiting(false);
       _streamingMessage = ChatMessage(
         role: MessageRole.assistant,
         content: content,
@@ -144,6 +150,7 @@ class ChatStore {
   void _handleAgentToolCall(dynamic data) {
     // Finalize any in-progress streaming text
     _finalizeStreamingMessage();
+    _setWaiting(false);
 
     final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
     final toolCallId = map['toolCallId'] as String? ?? '';
@@ -197,6 +204,7 @@ class ChatStore {
   // ── stream:agent:done ──────────────────────────────────────────────
   void _handleAgentDone(dynamic data) {
     _finalizeStreamingMessage();
+    _setWaiting(false);
 
     // Extract token usage if available
     if (data is Map<String, dynamic>) {
@@ -235,6 +243,8 @@ class ChatStore {
     final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
     final errorText = map['error'] as String? ?? data.toString();
     final recoverable = map['recoverable'] as bool? ?? false;
+
+    _setWaiting(false);
 
     // Skip recoverable errors silently
     if (recoverable && _streamingMessage == null) return;
@@ -426,6 +436,7 @@ class ChatStore {
         if (_currentSessionId != null) 'sessionId': _currentSessionId,
       }),
     );
+    _setWaiting(true);
     _notifyListeners();
   }
 
@@ -433,6 +444,7 @@ class ChatStore {
     ConnectionManager.instance.send(WsMessage(event: WsEvents.commandStop));
     _finalizeStreamingMessage();
     _isStreaming = false;
+    _setWaiting(false);
     _notifyListeners();
   }
 
@@ -461,6 +473,14 @@ class ChatStore {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────
+
+  void _setWaiting(bool value) {
+    if (_isWaitingForResponse == value) return;
+    _isWaitingForResponse = value;
+    if (!_waitingController.isClosed) {
+      _waitingController.add(value);
+    }
+  }
 
   void _finalizeStreamingMessage() {
     if (_streamingMessage != null) {
@@ -528,5 +548,6 @@ class ChatStore {
     _messagesController.close();
     _streamingController.close();
     _permissionController.close();
+    _waitingController.close();
   }
 }

@@ -15,11 +15,14 @@ import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
 import '../services/session_sync_service.dart';
 import '../services/voice_input_service.dart';
+import '../widgets/animated_message_item.dart';
 import '../widgets/connection_status_bar.dart';
 import '../widgets/mic_button.dart';
 import '../widgets/permission_bar.dart';
 import '../widgets/project_drawer.dart';
-import '../widgets/tool_card.dart';
+import '../widgets/streaming_shimmer.dart';
+import '../widgets/thinking_indicator.dart';
+import '../widgets/tool_call_list.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -28,18 +31,21 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage>
-    with SingleTickerProviderStateMixin {
+class _HomePageState extends State<HomePage> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
 
   List<ChatMessage> _displayMessages = [];
   bool _isStreaming = false;
+  bool _isWaiting = false;
+  bool _showScrollFab = false;
+  int _previousGroupCount = 0;
   String? _desktopIdentity;
   PermissionRequest? _permissionRequest;
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
   StreamSubscription? _voiceErrorSub;
+  StreamSubscription<bool>? _waitingSub;
   // _connectionStateSub removed — StreamBuilder handles state reactively
   StreamSubscription<String?>? _desktopIdentitySub;
   StreamSubscription<PermissionRequest?>? _permissionSub;
@@ -53,12 +59,19 @@ class _HomePageState extends State<HomePage>
     _messagesSub = ChatStore.instance.messagesStream.listen((msgs) {
       if (mounted) {
         setState(() => _displayMessages = msgs);
-        if (_isStreaming) _scrollToBottom();
+        if (_isStreaming && !_showScrollFab) _scrollToBottom();
       }
     });
 
     _streamingSub = ChatStore.instance.streamingStream.listen((streaming) {
       if (mounted) setState(() => _isStreaming = streaming);
+    });
+
+    _waitingSub = ChatStore.instance.waitingStream.listen((waiting) {
+      if (mounted) {
+        setState(() => _isWaiting = waiting);
+        if (waiting) _scrollToBottom();
+      }
     });
 
     _permissionSub = ChatStore.instance.permissionStream.listen((req) {
@@ -89,6 +102,7 @@ class _HomePageState extends State<HomePage>
   void dispose() {
     _messagesSub?.cancel();
     _streamingSub?.cancel();
+    _waitingSub?.cancel();
     _voiceErrorSub?.cancel();
     _desktopIdentitySub?.cancel();
     _permissionSub?.cancel();
@@ -118,6 +132,13 @@ class _HomePageState extends State<HomePage>
   void _onScroll() {
     if (_scrollController.position.pixels <= 50) {
       ChatStore.instance.loadMoreMessages();
+    }
+    // Show/hide scroll-to-bottom FAB
+    final distanceFromBottom = _scrollController.position.maxScrollExtent -
+        _scrollController.position.pixels;
+    final shouldShow = distanceFromBottom > 100;
+    if (shouldShow != _showScrollFab) {
+      setState(() => _showScrollFab = shouldShow);
     }
   }
 
@@ -302,7 +323,32 @@ class _HomePageState extends State<HomePage>
                   desktopIdentity: _desktopIdentity);
             },
           ),
-          Expanded(child: _buildMessageList()),
+          Expanded(
+            child: Stack(
+              children: [
+                _buildMessageList(),
+                // Scroll-to-bottom FAB
+                if (_showScrollFab)
+                  Positioned(
+                    right: 12,
+                    bottom: 12,
+                    child: AnimatedOpacity(
+                      opacity: _showScrollFab ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: FloatingActionButton.small(
+                        onPressed: () {
+                          _scrollToBottom();
+                          setState(() => _showScrollFab = false);
+                        },
+                        backgroundColor: AppColors.bgElevated,
+                        child: const Icon(Icons.keyboard_arrow_down,
+                            color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           if (_permissionRequest != null)
             PermissionBar(request: _permissionRequest!),
           _buildInputBar(),
@@ -314,21 +360,65 @@ class _HomePageState extends State<HomePage>
   // ── Message list ───────────────────────────────────────────────────
 
   Widget _buildMessageList() {
-    if (_displayMessages.isEmpty) {
+    if (_displayMessages.isEmpty && !_isWaiting) {
       return const Center(
         child: Text('暂无消息',
             style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
       );
     }
 
+    final showThinking = _isWaiting && !_isStreaming;
+    // Group consecutive tool messages together
+    final grouped = _groupMessages(_displayMessages);
+    final itemCount = grouped.length + (showThinking ? 1 : 0);
+    final prevCount = _previousGroupCount;
+    _previousGroupCount = grouped.length;
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      itemCount: _displayMessages.length,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
-        return _buildMessageItem(_displayMessages[index]);
+        if (showThinking && index == grouped.length) {
+          return const ThinkingIndicator();
+        }
+        final item = grouped[index];
+        Widget child;
+        if (item is _ToolGroup) {
+          child = ToolCallGroup(tools: item.messages);
+        } else {
+          child = _buildMessageItem(item as ChatMessage);
+        }
+        // Animate only newly appended items
+        if (index >= prevCount) {
+          return AnimatedMessageItem(child: child);
+        }
+        return child;
       },
     );
+  }
+
+  /// Group consecutive tool messages into _ToolGroup objects.
+  List<dynamic> _groupMessages(List<ChatMessage> messages) {
+    final result = <dynamic>[];
+    List<ChatMessage>? currentToolGroup;
+
+    for (final msg in messages) {
+      if (msg.role == MessageRole.tool) {
+        currentToolGroup ??= [];
+        currentToolGroup.add(msg);
+      } else {
+        if (currentToolGroup != null) {
+          result.add(_ToolGroup(currentToolGroup));
+          currentToolGroup = null;
+        }
+        result.add(msg);
+      }
+    }
+    if (currentToolGroup != null) {
+      result.add(_ToolGroup(currentToolGroup));
+    }
+    return result;
   }
 
   Widget _buildMessageItem(ChatMessage msg) {
@@ -338,7 +428,8 @@ class _HomePageState extends State<HomePage>
       case MessageRole.assistant:
         return _buildAssistantBlock(msg);
       case MessageRole.tool:
-        return ToolCard(message: msg);
+        // Should not reach here — tools are grouped by _groupMessages
+        return ToolCallGroup(tools: [msg]);
     }
   }
 
@@ -353,7 +444,7 @@ class _HomePageState extends State<HomePage>
       child: Container(
         constraints: BoxConstraints(maxWidth: screenWidth * 0.80),
         margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: AppColors.userBubble,
           borderRadius: const BorderRadius.only(
@@ -365,7 +456,7 @@ class _HomePageState extends State<HomePage>
         ),
         child: Text(msg.content,
             style: const TextStyle(
-                color: Colors.white, fontSize: 14, height: 1.5)),
+                color: Colors.white, fontSize: 13, height: 1.5)),
       ),
       ),
     );
@@ -379,7 +470,7 @@ class _HomePageState extends State<HomePage>
       child: Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: const BoxDecoration(
         color: AppColors.assistantBubble,
         borderRadius: BorderRadius.only(
@@ -392,16 +483,8 @@ class _HomePageState extends State<HomePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (msg.isStreaming)
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Flexible(child: _buildMarkdownBody(msg.content)),
-                const _StreamingCursor(),
-              ],
-            )
-          else
-            _buildMarkdownBody(msg.content),
+          _buildMarkdownBody(msg.content),
+          if (msg.isStreaming) const StreamingShimmer(),
           // Token usage footer
           if (msg.usage != null)
             Padding(
@@ -418,27 +501,32 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  Widget _buildMarkdownBody(String content) {
+  Widget _buildMarkdownBody(String rawContent) {
+    // Strip <details>...</details> blocks — tool outputs are shown via ToolCallGroup
+    final content = rawContent.replaceAll(RegExp(r'<details[\s\S]*?</details>'), '').trim();
+    if (content.isEmpty) return const SizedBox.shrink();
     return MarkdownBody(
       data: content,
       selectable: true,
       styleSheet: MarkdownStyleSheet(
         // Text
         p: const TextStyle(
-            color: AppColors.textPrimary, fontSize: 14, height: 1.6),
+            color: AppColors.textPrimary, fontSize: 13, height: 1.5),
+        pPadding: const EdgeInsets.only(bottom: 6),
         h1: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 18,
-            fontWeight: FontWeight.bold),
-        h2: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.bold),
-        h3: const TextStyle(
+        h2: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.bold),
-        listBullet: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+        h3: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.bold),
+        listBullet: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+        listBulletPadding: const EdgeInsets.only(right: 6),
         // Inline code
         code: TextStyle(
           color: AppColors.textPrimary,
@@ -603,14 +691,26 @@ class _CodeBlockBuilder extends MarkdownElementBuilder {
   }
 }
 
-class _CodeBlockWidget extends StatelessWidget {
+class _CodeBlockWidget extends StatefulWidget {
   final String code;
   final String? language;
 
   const _CodeBlockWidget({required this.code, this.language});
 
   @override
+  State<_CodeBlockWidget> createState() => _CodeBlockWidgetState();
+}
+
+class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
+  bool _collapsed = true;
+
+  @override
   Widget build(BuildContext context) {
+    final code = widget.code;
+    final language = widget.language;
+    final lineCount = '\n'.allMatches(code).length + 1;
+    final isLong = lineCount > 15;
+
     // Try syntax highlighting
     List<TextSpan> spans;
     try {
@@ -678,10 +778,14 @@ class _CodeBlockWidget extends StatelessWidget {
               ],
             ),
           ),
-          // Code content
-          Container(
+          // Code content with collapse support
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
             width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: 300),
+            constraints: BoxConstraints(
+              maxHeight: isLong && _collapsed ? 200 : 600,
+            ),
             padding: const EdgeInsets.all(12),
             child: SingleChildScrollView(
               child: SingleChildScrollView(
@@ -700,6 +804,32 @@ class _CodeBlockWidget extends StatelessWidget {
               ),
             ),
           ),
+          // Show more / less toggle for long code
+          if (isLong)
+            GestureDetector(
+              onTap: () => setState(() => _collapsed = !_collapsed),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                decoration: const BoxDecoration(
+                  color: AppColors.bgTertiary,
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(6),
+                    bottomRight: Radius.circular(6),
+                  ),
+                ),
+                child: Text(
+                  _collapsed
+                      ? 'Show more ($lineCount lines)'
+                      : 'Show less',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: AppColors.accent,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -731,40 +861,9 @@ class _CodeBlockWidget extends StatelessWidget {
   }
 }
 
-// ── Streaming cursor ─────────────────────────────────────────────────
+// ── Helper for grouping consecutive tool messages ─────────────────────
 
-class _StreamingCursor extends StatefulWidget {
-  const _StreamingCursor();
-
-  @override
-  State<_StreamingCursor> createState() => _StreamingCursorState();
-}
-
-class _StreamingCursorState extends State<_StreamingCursor>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 530),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _controller,
-      child: const Text('▌',
-          style: TextStyle(color: AppColors.accent, fontSize: 15)),
-    );
-  }
+class _ToolGroup {
+  final List<ChatMessage> messages;
+  const _ToolGroup(this.messages);
 }
