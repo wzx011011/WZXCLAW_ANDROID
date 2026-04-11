@@ -19,6 +19,21 @@ class PermissionRequest {
   });
 }
 
+/// AskUserQuestion request from the desktop agent.
+class AskUserQuestion {
+  final String questionId;
+  final String question;
+  final List<Map<String, String>> options; // [{label, description}]
+  final bool multiSelect;
+
+  const AskUserQuestion({
+    required this.questionId,
+    required this.question,
+    required this.options,
+    this.multiSelect = false,
+  });
+}
+
 class ChatStore {
   static final ChatStore _instance = ChatStore._();
   static ChatStore get instance => _instance;
@@ -45,6 +60,9 @@ class ChatStore {
       StreamController<Map<String, dynamic>?>.broadcast();
   Stream<Map<String, dynamic>?> get planModeStream =>
       _planModeController.stream;
+
+  final _askUserController = StreamController<AskUserQuestion?>.broadcast();
+  Stream<AskUserQuestion?> get askUserStream => _askUserController.stream;
 
   // -- Internal state --
   final List<ChatMessage> _messages = [];
@@ -110,6 +128,9 @@ class ChatStore {
           break;
         case WsEvents.streamRetrying:
           _handleRetrying(wsMsg.data);
+          break;
+        case WsEvents.agentAskUserQuestion:
+          _handleAskUserQuestion(wsMsg.data);
           break;
 
         // -- Legacy format (backward compat) --
@@ -378,6 +399,45 @@ class ChatStore {
     ));
     if (!_planModeController.isClosed) {
       _planModeController.add(null); // Clear plan mode bar
+    }
+  }
+
+  // ── stream:agent:ask_user_question ──────────────────────────────────
+  void _handleAskUserQuestion(dynamic data) {
+    final map = data is Map<String, dynamic> ? data : <String, dynamic>{};
+    final options = (map['options'] as List<dynamic>? ?? [])
+        .map((o) {
+          final m = o is Map<String, dynamic> ? o : <String, dynamic>{};
+          return {
+            'label': m['label'] as String? ?? '',
+            'description': m['description'] as String? ?? '',
+          };
+        })
+        .toList();
+    final question = AskUserQuestion(
+      questionId: map['questionId'] as String? ?? '',
+      question: map['question'] as String? ?? '',
+      options: options,
+      multiSelect: map['multiSelect'] as bool? ?? false,
+    );
+    if (!_askUserController.isClosed) {
+      _askUserController.add(question);
+    }
+  }
+
+  /// Send an answer to an AskUserQuestion back to the desktop.
+  void respondToAskUser(String questionId, List<String> selectedLabels,
+      {String? customText}) {
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.askUserAnswer,
+      data: {
+        'questionId': questionId,
+        'selectedLabels': selectedLabels,
+        if (customText != null) 'customText': customText,
+      },
+    ));
+    if (!_askUserController.isClosed) {
+      _askUserController.add(null); // Clear the question
     }
   }
 
@@ -665,5 +725,6 @@ class ChatStore {
     _permissionController.close();
     _waitingController.close();
     _planModeController.close();
+    _askUserController.close();
   }
 }

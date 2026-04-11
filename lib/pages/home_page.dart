@@ -16,6 +16,7 @@ import '../services/connection_manager.dart';
 import '../services/session_sync_service.dart';
 import '../services/voice_input_service.dart';
 import '../widgets/animated_message_item.dart';
+import '../widgets/ask_user_bar.dart';
 import '../widgets/connection_status_bar.dart';
 import '../widgets/mic_button.dart';
 import '../widgets/permission_bar.dart';
@@ -50,6 +51,14 @@ class _HomePageState extends State<HomePage> {
   // _connectionStateSub removed — StreamBuilder handles state reactively
   StreamSubscription<String?>? _desktopIdentitySub;
   StreamSubscription<PermissionRequest?>? _permissionSub;
+
+  // Slash command autocomplete
+  List<_SlashCommand> _slashSuggestions = [];
+  static const _allSlashCommands = [
+    _SlashCommand('/init', 'Generate WZXCLAW.md'),
+    _SlashCommand('/compact', 'Compress context'),
+    _SlashCommand('/clear', 'New session'),
+  ];
 
   @override
   void initState() {
@@ -360,6 +369,14 @@ class _HomePageState extends State<HomePage> {
               return PlanModeBar(planData: planData);
             },
           ),
+          StreamBuilder<AskUserQuestion?>(
+            stream: ChatStore.instance.askUserStream,
+            builder: (context, snapshot) {
+              if (snapshot.data == null) return const SizedBox.shrink();
+              return AskUserBar(question: snapshot.data!);
+            },
+          ),
+          _buildSlashSuggestions(),
           _buildInputBar(),
         ],
       ),
@@ -593,6 +610,81 @@ class _HomePageState extends State<HomePage> {
     return tokens.toString();
   }
 
+  // ── Slash command autocomplete ────────────────────────────────────
+
+  void _onInputChanged(String text) {
+    if (text.startsWith('/')) {
+      final query = text.toLowerCase();
+      final matches = _allSlashCommands
+          .where((cmd) => cmd.command.startsWith(query))
+          .toList();
+      if (matches.isNotEmpty && text.length < 20) {
+        setState(() => _slashSuggestions = matches);
+        return;
+      }
+    }
+    if (_slashSuggestions.isNotEmpty) {
+      setState(() => _slashSuggestions = []);
+    }
+  }
+
+  void _selectSlashCommand(_SlashCommand cmd) {
+    _inputController.text = cmd.command;
+    _inputController.selection = TextSelection.fromPosition(
+      TextPosition(offset: cmd.command.length),
+    );
+    setState(() => _slashSuggestions = []);
+  }
+
+  Widget _buildSlashSuggestions() {
+    if (_slashSuggestions.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.bgElevated,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: _slashSuggestions.map((cmd) {
+          return InkWell(
+            onTap: () => _selectSlashCommand(cmd),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Text(
+                    cmd.command,
+                    style: const TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      cmd.description,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   // ── Input bar ──────────────────────────────────────────────────────
 
   Widget _buildInputBar() {
@@ -641,6 +733,7 @@ class _HomePageState extends State<HomePage> {
                     minLines: 1,
                     keyboardType: TextInputType.multiline,
                     textInputAction: TextInputAction.newline,
+                    onChanged: _onInputChanged,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -875,4 +968,12 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
 class _ToolGroup {
   final List<ChatMessage> messages;
   const _ToolGroup(this.messages);
+}
+
+// ── Slash command model ───────────────────────────────────────────────
+
+class _SlashCommand {
+  final String command;
+  final String description;
+  const _SlashCommand(this.command, this.description);
 }

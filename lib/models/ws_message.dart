@@ -126,4 +126,10 @@ class WsEvents {
 
   // -- Retry event (incoming: desktop -> mobile) --
   static const String streamRetrying = 'stream:retrying';
+
+  // -- AskUserQuestion events (incoming: desktop -> mobile) --
+  static const String agentAskUserQuestion = 'stream:agent:ask_user_question';
+
+  // -- AskUserQuestion response (outgoing: mobile -> desktop) --
+  static const String askUserAnswer = 'ask-user:answer';
 }
