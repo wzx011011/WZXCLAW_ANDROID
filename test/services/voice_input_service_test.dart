@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:wzxclaw_android/services/voice_input_service.dart';
 
 void main() {
+  // Required before any code that touches Flutter platform channels
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('VoiceInputService', () {
     group('singleton', () {
       test('instance returns same object on repeated access', () {
@@ -38,21 +41,22 @@ void main() {
         );
       });
 
-      test('has initialize method returning Future<bool>', () {
-        expect(
-          VoiceInputService.instance.initialize(),
-          isA<Future<bool>>(),
-        );
+      test('has initialize method returning Future<bool>', () async {
+        final result = VoiceInputService.instance.initialize();
+        expect(result, isA<Future<bool>>());
+        // Await to completion so the MissingPluginException doesn't leak past the test
+        await result.catchError((_) => false);
       });
 
-      test('has startListening method accepting onResult callback', () {
+      test('has startListening method accepting onResult callback', () async {
         // Verify the method signature compiles -- it accepts required onResult
+        // Await so async platform exception doesn't leak past the test
         try {
-          VoiceInputService.instance.startListening(
+          await VoiceInputService.instance.startListening(
             onResult: (String text) {},
           );
         } catch (_) {
-          // May throw due to missing platform channel, that's fine
+          // Expected: MissingPluginException or similar in test environment
         }
       });
 
