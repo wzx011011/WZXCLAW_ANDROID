@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wzxclaw_android/config/app_colors.dart';
 import 'package:wzxclaw_android/widgets/mic_button.dart';
 
 void main() {
   group('MicButton', () {
-    late String lastResult;
     late void Function(String) onResult;
 
     setUp(() {
-      lastResult = '';
-      onResult = (text) => lastResult = text;
+      onResult = (_) {};
     });
 
     Widget buildSubject({
@@ -47,7 +44,8 @@ void main() {
         await tester.pumpWidget(buildSubject());
         final semantics = tester.getSemantics(find.byType(MicButton));
         expect(semantics.label, contains('语音输入'));
-        expect(semantics.hasFlag(SemanticsFlag.isButton), isTrue);
+        // flagsCollection is the non-deprecated replacement for hasFlag()
+        expect(semantics.flagsCollection.isButton, isTrue);
       });
 
       testWidgets('has IconButton with null onPressed (long-press only)',
@@ -74,10 +72,10 @@ void main() {
         expect(icon.color, equals(const Color(0xFF5A5A5A)));
       });
 
-      testWidgets('shows de-emphasized color when streaming',
-          (tester) async {
+      testWidgets('shows de-emphasized color when streaming', (tester) async {
         await tester.pumpWidget(
-            buildSubject(isConnected: true, isStreaming: true));
+          buildSubject(isConnected: true, isStreaming: true),
+        );
         final icon = tester.widget<Icon>(find.byIcon(Icons.mic));
         // When streaming: AppColors.dark.textMuted
         expect(icon.color, equals(const Color(0xFF5A5A5A)));
@@ -88,7 +86,8 @@ void main() {
       testWidgets('accepts onResult callback', (tester) async {
         String? received;
         await tester.pumpWidget(MaterialApp(
-          theme: ThemeData.dark().copyWith(extensions: const [AppColors.dark]),
+          theme:
+              ThemeData.dark().copyWith(extensions: const [AppColors.dark]),
           home: Scaffold(
             body: MicButton(
               onResult: (text) => received = text,
@@ -102,7 +101,8 @@ void main() {
 
       testWidgets('accepts isConnected parameter', (tester) async {
         await tester.pumpWidget(MaterialApp(
-          theme: ThemeData.dark().copyWith(extensions: const [AppColors.dark]),
+          theme:
+              ThemeData.dark().copyWith(extensions: const [AppColors.dark]),
           home: Scaffold(
             body: MicButton(
               onResult: onResult,
@@ -116,7 +116,8 @@ void main() {
 
       testWidgets('accepts isStreaming parameter', (tester) async {
         await tester.pumpWidget(MaterialApp(
-          theme: ThemeData.dark().copyWith(extensions: const [AppColors.dark]),
+          theme:
+              ThemeData.dark().copyWith(extensions: const [AppColors.dark]),
           home: Scaffold(
             body: MicButton(
               onResult: onResult,
