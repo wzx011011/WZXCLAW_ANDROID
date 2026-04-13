@@ -78,6 +78,7 @@ class ChatMessage {
   final String? toolCallId;
   final String? toolInput;
   final String? toolOutput;
+  final String? toolResultSummary;
 
   ChatMessage({
     this.id,
@@ -92,6 +93,7 @@ class ChatMessage {
     this.toolCallId,
     this.toolInput,
     this.toolOutput,
+    this.toolResultSummary,
   });
 
   ChatMessage copyWith({
@@ -102,6 +104,7 @@ class ChatMessage {
     List<ToolCallInfo>? toolCalls,
     TokenUsage? usage,
     String? toolOutput,
+    String? toolResultSummary,
   }) =>
       ChatMessage(
         id: id ?? this.id,
@@ -116,6 +119,7 @@ class ChatMessage {
         toolCallId: toolCallId,
         toolInput: toolInput,
         toolOutput: toolOutput ?? this.toolOutput,
+        toolResultSummary: toolResultSummary ?? this.toolResultSummary,
       );
 
   Map<String, dynamic> toDbMap() => {
@@ -127,6 +131,7 @@ class ChatMessage {
         'tool_call_id': toolCallId,
         'tool_input': toolInput,
         'tool_output': toolOutput,
+        'tool_result_summary': toolResultSummary,
         'tool_calls_json': toolCalls != null
             ? jsonEncode(toolCalls!.map((t) => t.toJson()).toList())
             : null,
@@ -164,6 +169,7 @@ class ChatMessage {
       toolCallId: map['tool_call_id'] as String?,
       toolInput: map['tool_input'] as String?,
       toolOutput: map['tool_output'] as String?,
+      toolResultSummary: map['tool_result_summary'] as String?,
       toolCalls: toolCalls,
       usage: usage,
     );

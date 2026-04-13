@@ -27,27 +27,19 @@ class _ThinkingIndicatorState extends State<ThinkingIndicator>
   void initState() {
     super.initState();
     _phraseIndex = Random().nextInt(_phrases.length);
-
-    // Shimmer sweep: 2s loop
     _shimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     )..repeat();
-
-    // Dot pulse: 1.5s loop
     _dotController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-
-    // Phrase fade
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
       value: 1.0,
     );
-
-    // Rotate phrases every 3s
     _phraseTimer = Timer.periodic(const Duration(seconds: 3), (_) => _nextPhrase());
   }
 
@@ -70,17 +62,17 @@ class _ThinkingIndicatorState extends State<ThinkingIndicator>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Container(
       margin: const EdgeInsets.only(left: 12, right: 48, top: 4, bottom: 4),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.bgTertiary,
+        color: colors.bgTertiary,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Pulsing dot
           AnimatedBuilder(
             animation: _dotController,
             builder: (_, __) => Opacity(
@@ -88,41 +80,34 @@ class _ThinkingIndicatorState extends State<ThinkingIndicator>
               child: Container(
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.accent,
+                decoration: BoxDecoration(
+                  color: colors.accent,
                   shape: BoxShape.circle,
                 ),
               ),
             ),
           ),
           const SizedBox(width: 10),
-          // Shimmer text
           FadeTransition(
             opacity: _fadeController,
             child: AnimatedBuilder(
               animation: _shimmerController,
               builder: (_, __) {
+                final dx = _shimmerController.value * 3 - 1;
                 return ShaderMask(
-                  shaderCallback: (bounds) {
-                    final dx = _shimmerController.value * 3 - 1;
-                    return LinearGradient(
-                      begin: Alignment(dx - 0.3, 0),
-                      end: Alignment(dx + 0.3, 0),
-                      colors: const [
-                        AppColors.textMuted,
-                        AppColors.accent,
-                        AppColors.textMuted,
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
-                    ).createShader(bounds);
-                  },
+                  shaderCallback: (bounds) => LinearGradient(
+                    begin: Alignment(dx - 0.3, 0),
+                    end: Alignment(dx + 0.3, 0),
+                    colors: [colors.textMuted, colors.accent, colors.textMuted],
+                    stops: const [0.0, 0.5, 1.0],
+                  ).createShader(bounds),
                   blendMode: BlendMode.srcIn,
                   child: Text(
                     _phrases[_phraseIndex],
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: Colors.white, // masked by shader
+                      color: Colors.white,
                     ),
                   ),
                 );

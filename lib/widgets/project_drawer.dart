@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_colors.dart';
 import '../models/connection_state.dart';
 import '../models/session_meta.dart';
 import '../services/chat_store.dart';
@@ -8,39 +9,37 @@ import '../services/session_sync_service.dart';
 import 'session_list_tile.dart';
 
 /// Drawer widget displaying the current desktop workspace and its sessions.
-///
-/// Subscribes to [SessionSyncService] for workspace info and session list,
-/// and [ConnectionManager] for connection status.
 class ProjectDrawer extends StatelessWidget {
   const ProjectDrawer({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Drawer(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: colors.bgPrimary,
       width: 304,
       child: Column(
         children: [
-          _buildHeader(),
+          _buildHeader(colors),
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
-                _buildWorkspaceSection(),
-                const Divider(color: Colors.white12, height: 1),
-                _buildFileBrowseEntry(context),
-                const Divider(color: Colors.white12, height: 1),
-                _buildSessionSection(),
+                _buildWorkspaceSection(colors),
+                Divider(color: colors.border, height: 1),
+                _buildFileBrowseEntry(context, colors),
+                Divider(color: colors.border, height: 1),
+                _buildSessionSection(context, colors),
               ],
             ),
           ),
-          _buildFooter(),
+          _buildFooter(colors),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(AppColors colors) {
     return StreamBuilder<WorkspaceInfo?>(
       stream: SessionSyncService.instance.workspaceInfoStream,
       initialData: SessionSyncService.instance.workspaceInfo,
@@ -50,33 +49,30 @@ class ProjectDrawer extends StatelessWidget {
           height: 120,
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: const BoxDecoration(
-            color: Color(0xFF16213E),
+          decoration: BoxDecoration(
+            color: colors.bgSecondary,
             border: Border(
-              bottom: BorderSide(
-                color: Color(0xFF6366F1),
-                width: 3,
-              ),
+              bottom: BorderSide(color: colors.accent, width: 3),
             ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
+              Text(
                 '工作区',
                 style: TextStyle(
                   fontSize: 20,
-                  color: Colors.white,
+                  color: colors.textPrimary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 info?.workspaceName ?? '未连接',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white70,
+                  color: colors.textSecondary,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -87,7 +83,7 @@ class ProjectDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildWorkspaceSection() {
+  Widget _buildWorkspaceSection(AppColors colors) {
     return StreamBuilder<WsConnectionState>(
       stream: ConnectionManager.instance.stateStream,
       initialData: ConnectionManager.instance.state,
@@ -96,11 +92,11 @@ class ProjectDrawer extends StatelessWidget {
             stateSnapshot.data == WsConnectionState.disconnected;
 
         if (isDisconnected) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
+          return Padding(
+            padding: const EdgeInsets.all(24),
             child: Text(
               '未连接 -- 无法获取工作区',
-              style: TextStyle(color: Colors.white38, fontSize: 14),
+              style: TextStyle(color: colors.textMuted, fontSize: 14),
               textAlign: TextAlign.center,
             ),
           );
@@ -113,33 +109,32 @@ class ProjectDrawer extends StatelessWidget {
             final info = snapshot.data;
 
             if (info == null) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
+              return Padding(
+                padding: const EdgeInsets.all(16),
                 child: Text(
                   '等待桌面端推送工作区信息...',
-                  style: TextStyle(color: Colors.white38, fontSize: 14),
+                  style: TextStyle(color: colors.textMuted, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
               );
             }
 
             return ListTile(
-              leading: const Icon(Icons.folder_open,
-                  color: Color(0xFF6366F1), size: 20,),
+              leading: Icon(Icons.folder_open, color: colors.accent, size: 20),
               title: Text(
                 info.workspaceName,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                style: TextStyle(color: colors.textPrimary, fontSize: 14),
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
                 info.workspacePath,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: TextStyle(color: colors.textMuted, fontSize: 12),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),
               trailing: Text(
                 '${info.sessionCount} 会话',
-                style: const TextStyle(color: Colors.white24, fontSize: 12),
+                style: TextStyle(color: colors.textMuted, fontSize: 12),
               ),
             );
           },
@@ -148,12 +143,13 @@ class ProjectDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildFileBrowseEntry(BuildContext context) {
+  Widget _buildFileBrowseEntry(BuildContext context, AppColors colors) {
     return ListTile(
-      leading:
-          const Icon(Icons.folder_open, color: Colors.white54, size: 20),
-      title: const Text('浏览文件',
-          style: TextStyle(color: Colors.white70, fontSize: 14),),
+      leading: Icon(Icons.folder_open, color: colors.textSecondary, size: 20),
+      title: Text(
+        '浏览文件',
+        style: TextStyle(color: colors.textSecondary, fontSize: 14),
+      ),
       dense: true,
       onTap: () {
         Navigator.pop(context);
@@ -162,32 +158,31 @@ class ProjectDrawer extends StatelessWidget {
     );
   }
 
-  Widget _buildSessionSection() {
+  Widget _buildSessionSection(BuildContext context, AppColors colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Section header
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Row(
             children: [
-              const Icon(Icons.history, size: 16, color: Colors.white54),
+              Icon(Icons.history, size: 16, color: colors.textSecondary),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 '会话',
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white54,
+                  color: colors.textSecondary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const Spacer(),
-              // New session button
               Builder(
                 builder: (context) => GestureDetector(
                   onTap: () async {
-                    final result = await SessionSyncService.instance.createSession();
+                    final result =
+                        await SessionSyncService.instance.createSession();
                     if (result != null) {
                       final sessionId = result['id'] as String?;
                       if (sessionId != null) {
@@ -196,13 +191,13 @@ class ProjectDrawer extends StatelessWidget {
                       }
                     }
                   },
-                  child: const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: Icon(Icons.add, size: 16, color: Colors.white38),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child:
+                        Icon(Icons.add, size: 16, color: colors.textMuted),
                   ),
                 ),
               ),
-              // Refresh button
               StreamBuilder<bool>(
                 stream: SessionSyncService.instance.loadingStream,
                 initialData: SessionSyncService.instance.isLoading,
@@ -211,20 +206,21 @@ class ProjectDrawer extends StatelessWidget {
                   return GestureDetector(
                     onTap: isLoading
                         ? null
-                        : () => SessionSyncService.instance.fetchSessions(),
+                        : () =>
+                            SessionSyncService.instance.fetchSessions(),
                     child: isLoading
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 14,
                             height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 1.5,
-                              color: Colors.white38,
+                              color: colors.textMuted,
                             ),
                           )
-                        : const Icon(
+                        : Icon(
                             Icons.refresh,
                             size: 16,
-                            color: Colors.white38,
+                            color: colors.textMuted,
                           ),
                   );
                 },
@@ -232,7 +228,6 @@ class ProjectDrawer extends StatelessWidget {
             ],
           ),
         ),
-        // Session list
         StreamBuilder<List<SessionMeta>>(
           stream: SessionSyncService.instance.sessionsStream,
           initialData: SessionSyncService.instance.sessions,
@@ -240,11 +235,12 @@ class ProjectDrawer extends StatelessWidget {
             final sessions = snapshot.data ?? [];
 
             if (sessions.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Text(
                   '暂无会话记录',
-                  style: TextStyle(color: Colors.white24, fontSize: 13),
+                  style: TextStyle(color: colors.textMuted, fontSize: 13),
                 ),
               );
             }
@@ -276,7 +272,6 @@ class ProjectDrawer extends StatelessWidget {
   Future<void> _onSessionTap(BuildContext context, SessionMeta session) async {
     SessionSyncService.instance.setActiveSession(session.id);
 
-    // Load messages from desktop (or cache)
     try {
       final result =
           await SessionSyncService.instance.loadSessionMessages(session.id);
@@ -286,19 +281,18 @@ class ProjectDrawer extends StatelessWidget {
         ChatStore.instance.loadFetchedMessages(messages.cast());
       }
     } catch (_) {
-      // Fallback: just switch to whatever is cached
       ChatStore.instance.switchToSession(session.id);
     }
 
     if (context.mounted) Navigator.pop(context);
   }
 
-  Widget _buildFooter() {
+  Widget _buildFooter(AppColors colors) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: Colors.white12, width: 0.5),
+          top: BorderSide(color: colors.border, width: 0.5),
         ),
       ),
       child: StreamBuilder<WsConnectionState>(
@@ -339,7 +333,7 @@ class ProjectDrawer extends StatelessWidget {
         return Colors.green;
       case WsConnectionState.connecting:
       case WsConnectionState.reconnecting:
-        return Colors.yellow;
+        return Colors.orange;
       case WsConnectionState.disconnected:
         return Colors.red;
     }

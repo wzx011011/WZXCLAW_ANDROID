@@ -8,7 +8,7 @@ class ChatDatabase {
   ChatDatabase._();
 
   static const _dbName = 'wzxclaw_chat.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
 
   Database? _db;
 
@@ -29,6 +29,7 @@ class ChatDatabase {
             tool_call_id TEXT,
             tool_input TEXT,
             tool_output TEXT,
+            tool_result_summary TEXT,
             tool_calls_json TEXT,
             input_tokens INTEGER,
             output_tokens INTEGER
@@ -47,7 +48,7 @@ class ChatDatabase {
           )
         ''');
         await db.execute(
-            'CREATE INDEX idx_messages_session ON messages(session_id)');
+            'CREATE INDEX idx_messages_session ON messages(session_id)',);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -55,11 +56,11 @@ class ChatDatabase {
           await db.execute('ALTER TABLE messages ADD COLUMN tool_input TEXT');
           await db.execute('ALTER TABLE messages ADD COLUMN tool_output TEXT');
           await db.execute(
-              'ALTER TABLE messages ADD COLUMN tool_calls_json TEXT');
+              'ALTER TABLE messages ADD COLUMN tool_calls_json TEXT',);
           await db.execute(
-              'ALTER TABLE messages ADD COLUMN input_tokens INTEGER');
+              'ALTER TABLE messages ADD COLUMN input_tokens INTEGER',);
           await db.execute(
-              'ALTER TABLE messages ADD COLUMN output_tokens INTEGER');
+              'ALTER TABLE messages ADD COLUMN output_tokens INTEGER',);
         }
         if (oldVersion < 3) {
           await db.execute('''
@@ -75,9 +76,13 @@ class ChatDatabase {
             )
           ''');
           await db.execute(
-              'ALTER TABLE messages ADD COLUMN session_id TEXT');
+              'ALTER TABLE messages ADD COLUMN session_id TEXT',);
           await db.execute(
-              'CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)');
+              'CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)',);
+        }
+        if (oldVersion < 4) {
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN tool_result_summary TEXT',);
         }
       },
     );
@@ -113,7 +118,7 @@ class ChatDatabase {
   Future<int> getMessageCount() async {
     final db = await _ensureDb();
     final result = await db.rawQuery(
-        'SELECT COUNT(*) as cnt FROM messages WHERE session_id IS NULL');
+        'SELECT COUNT(*) as cnt FROM messages WHERE session_id IS NULL',);
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
@@ -154,7 +159,7 @@ class ChatDatabase {
     final batch = db.batch();
     for (final s in sessions) {
       batch.insert('sessions', s.toDbMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace);
+          conflictAlgorithm: ConflictAlgorithm.replace,);
     }
     await batch.commit(noResult: true);
   }
@@ -174,7 +179,7 @@ class ChatDatabase {
     final db = await _ensureDb();
     await db.transaction((txn) async {
       await txn.delete('messages',
-          where: 'session_id = ?', whereArgs: [sessionId]);
+          where: 'session_id = ?', whereArgs: [sessionId],);
       await txn.delete('sessions', where: 'id = ?', whereArgs: [sessionId]);
     });
   }
@@ -182,15 +187,15 @@ class ChatDatabase {
   Future<void> clearSessionMessages(String sessionId) async {
     final db = await _ensureDb();
     await db.delete('messages',
-        where: 'session_id = ?', whereArgs: [sessionId]);
+        where: 'session_id = ?', whereArgs: [sessionId],);
     await db.update('sessions', {'is_synced': 0},
-        where: 'id = ?', whereArgs: [sessionId]);
+        where: 'id = ?', whereArgs: [sessionId],);
   }
 
   // ---- Session-scoped message queries ----
 
   Future<List<ChatMessage>> getSessionMessages(String sessionId,
-      {int limit = 100, int offset = 0}) async {
+      {int limit = 100, int offset = 0,}) async {
     final db = await _ensureDb();
     final rows = await db.query(
       'messages',
@@ -211,7 +216,7 @@ class ChatDatabase {
   }
 
   Future<void> insertSessionMessages(
-      String sessionId, List<ChatMessage> messages) async {
+      String sessionId, List<ChatMessage> messages,) async {
     final db = await _ensureDb();
     final batch = db.batch();
     for (final msg in messages) {
@@ -226,13 +231,13 @@ class ChatDatabase {
     final db = await _ensureDb();
     final result = await db.rawQuery(
         'SELECT COUNT(*) as cnt FROM messages WHERE session_id = ?',
-        [sessionId]);
+        [sessionId],);
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
   Future<void> markSessionSynced(String sessionId) async {
     final db = await _ensureDb();
     await db.update('sessions', {'is_synced': 1},
-        where: 'id = ?', whereArgs: [sessionId]);
+        where: 'id = ?', whereArgs: [sessionId],);
   }
 }

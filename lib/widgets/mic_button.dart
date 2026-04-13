@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../config/app_colors.dart';
 import '../services/voice_input_service.dart';
 
 /// Callback type for when voice recognition produces a final result.
@@ -10,19 +11,9 @@ typedef VoiceResultCallback = void Function(String text);
 ///
 /// Long-press to start recording, release to stop.
 /// Recognized text is sent to parent via [onResult] callback.
-///
-/// Visual states:
-/// - Idle + connected: Icons.mic, Colors.white38
-/// - Recording (pressed): Icons.mic with pulsing opacity 0.5-1.0 (800ms), Colors.redAccent
-/// - Disconnected: Icons.mic, Colors.white24, non-interactive
 class MicButton extends StatefulWidget {
-  /// Called with recognized text when a final result is available.
   final VoiceResultCallback onResult;
-
-  /// Whether the WebSocket is connected (enables/disables the button).
   final bool isConnected;
-
-  /// Whether AI is currently streaming (de-emphasizes the button).
   final bool isStreaming;
 
   const MicButton({
@@ -59,14 +50,12 @@ class _MicButtonState extends State<MicButton>
   Future<void> _onLongPressStart(LongPressStartDetails details) async {
     if (!widget.isConnected || widget.isStreaming) return;
 
-    // Attempt to start listening first, then animate on success
     await VoiceInputService.instance.startListening(
       onResult: (text) {
         widget.onResult(text);
       },
     );
 
-    // Only animate if the service is actually listening
     if (VoiceInputService.instance.isListening && mounted) {
       setState(() => _isRecording = true);
       _pulseController.repeat(reverse: true);
@@ -84,15 +73,17 @@ class _MicButtonState extends State<MicButton>
     await VoiceInputService.instance.stopListening();
   }
 
-  Color get _iconColor {
-    if (!widget.isConnected) return Colors.white24;
-    if (_isRecording) return Colors.redAccent;
-    if (widget.isStreaming) return Colors.white24;
-    return Colors.white38;
+  Color _iconColor(AppColors colors) {
+    if (!widget.isConnected) return colors.textMuted;
+    if (_isRecording) return colors.error;
+    if (widget.isStreaming) return colors.textMuted;
+    return colors.textSecondary;
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final color = _iconColor(colors);
     return GestureDetector(
       onLongPressStart: widget.isConnected && !widget.isStreaming
           ? _onLongPressStart
@@ -102,7 +93,7 @@ class _MicButtonState extends State<MicButton>
         label: '语音输入',
         button: true,
         child: IconButton(
-          onPressed: null, // Disable default tap -- we use long-press only
+          onPressed: null,
           icon: _isRecording
               ? FadeTransition(
                   opacity: Tween<double>(begin: 0.5, end: 1.0).animate(
@@ -111,9 +102,9 @@ class _MicButtonState extends State<MicButton>
                       curve: Curves.easeInOut,
                     ),
                   ),
-                  child: Icon(Icons.mic, color: _iconColor),
+                  child: Icon(Icons.mic, color: color),
                 )
-              : Icon(Icons.mic, color: _iconColor),
+              : Icon(Icons.mic, color: color),
           tooltip: '语音输入',
         ),
       ),

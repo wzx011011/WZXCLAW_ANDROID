@@ -2,12 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../services/chat_store.dart';
 
-/// A bar that appears when the desktop agent asks the user a question
-/// via the AskUserQuestion tool.
-///
-/// - Single-select: tapping an option immediately sends the response.
-/// - Multi-select: toggle options with checkboxes, then press Submit.
-/// - "Other" option: opens a text field for free-form input.
+/// A bar that appears when the desktop agent asks the user a question.
 class AskUserBar extends StatefulWidget {
   final AskUserQuestion question;
   const AskUserBar({super.key, required this.question});
@@ -48,14 +43,12 @@ class _AskUserBarState extends State<AskUserBar> {
   }
 
   void _onSingleSelect(String label) {
-    ChatStore.instance.respondToAskUser(
-      widget.question.questionId,
-      [label],
-    );
+    ChatStore.instance.respondToAskUser(widget.question.questionId, [label]);
   }
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final q = widget.question;
     final hasOptions = q.options.isNotEmpty;
 
@@ -64,7 +57,7 @@ class _AskUserBarState extends State<AskUserBar> {
       margin: const EdgeInsets.all(8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.bgPrimary,
+        color: colors.bgPrimary,
         border: Border.all(color: _accentColor),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -72,15 +65,14 @@ class _AskUserBarState extends State<AskUserBar> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Row(
             children: [
               const Icon(Icons.help_outline, size: 16, color: _accentColor),
               const SizedBox(width: 6),
-              Expanded(
+              const Expanded(
                 child: Text(
                   'Question',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: _accentColor,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -88,68 +80,54 @@ class _AskUserBarState extends State<AskUserBar> {
                 ),
               ),
               if (q.multiSelect)
-                const Text(
+                Text(
                   'Select multiple',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                  style: TextStyle(color: colors.textMuted, fontSize: 11),
                 ),
             ],
           ),
           const SizedBox(height: 8),
-          // Question text
           Text(
             q.question,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
-              height: 1.4,
-            ),
+            style: TextStyle(color: colors.textPrimary, fontSize: 13, height: 1.4),
           ),
-          // Options
           if (hasOptions) ...[
             const SizedBox(height: 10),
             ...q.options.map((opt) {
               final label = opt['label'] ?? '';
               final description = opt['description'] ?? '';
               final isSelected = _selected.contains(label);
-
               if (q.multiSelect) {
-                return _buildMultiSelectOption(
-                    label, description, isSelected);
+                return _buildMultiSelectOption(colors, label, description, isSelected);
               } else {
-                return _buildSingleSelectOption(label, description);
+                return _buildSingleSelectOption(colors, label, description);
               }
             }),
           ],
-          // "Other" toggle
           const SizedBox(height: 8),
           if (!_showOther)
             GestureDetector(
               onTap: () => setState(() => _showOther = true),
               child: Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: AppColors.bgSecondary,
+                  color: colors.bgSecondary,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.border),
+                  border: Border.all(color: colors.border),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.edit, size: 14, color: AppColors.textMuted),
+                    Icon(Icons.edit, size: 14, color: colors.textMuted),
                     const SizedBox(width: 8),
-                    const Text(
+                    Text(
                       'Other...',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: colors.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
               ),
             ),
-          // "Other" text field
           if (_showOther) ...[
             Row(
               children: [
@@ -157,20 +135,18 @@ class _AskUserBarState extends State<AskUserBar> {
                   child: TextField(
                     controller: _otherController,
                     autofocus: true,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 13),
+                    style: TextStyle(color: colors.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
                       hintText: 'Type your answer...',
-                      hintStyle:
-                          const TextStyle(color: AppColors.textMuted),
+                      hintStyle: TextStyle(color: colors.textMuted),
                       filled: true,
-                      fillColor: AppColors.bgInput,
+                      fillColor: colors.bgInput,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(6),
                         borderSide: BorderSide.none,
                       ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
                     onSubmitted: (_) => _submitOther(),
                   ),
@@ -183,14 +159,12 @@ class _AskUserBarState extends State<AskUserBar> {
                 ),
                 IconButton(
                   onPressed: () => setState(() => _showOther = false),
-                  icon: const Icon(Icons.close,
-                      color: AppColors.textMuted, size: 20),
+                  icon: Icon(Icons.close, color: colors.textMuted, size: 20),
                   tooltip: 'Cancel',
                 ),
               ],
             ),
           ],
-          // Multi-select submit button
           if (q.multiSelect && _selected.isNotEmpty && !_showOther) ...[
             const SizedBox(height: 10),
             Align(
@@ -200,8 +174,8 @@ class _AskUserBarState extends State<AskUserBar> {
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
                   backgroundColor: _accentColor,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -218,7 +192,7 @@ class _AskUserBarState extends State<AskUserBar> {
     );
   }
 
-  Widget _buildSingleSelectOption(String label, String description) {
+  Widget _buildSingleSelectOption(AppColors colors, String label, String description) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: GestureDetector(
@@ -227,9 +201,9 @@ class _AskUserBarState extends State<AskUserBar> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: AppColors.bgSecondary,
+            color: colors.bgSecondary,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: colors.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,10 +220,7 @@ class _AskUserBarState extends State<AskUserBar> {
                 const SizedBox(height: 2),
                 Text(
                   description,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
                 ),
               ],
             ],
@@ -260,7 +231,7 @@ class _AskUserBarState extends State<AskUserBar> {
   }
 
   Widget _buildMultiSelectOption(
-      String label, String description, bool isSelected) {
+      AppColors colors, String label, String description, bool isSelected,) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: GestureDetector(
@@ -277,22 +248,16 @@ class _AskUserBarState extends State<AskUserBar> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected
-                ? _accentColor.withOpacity(0.15)
-                : AppColors.bgSecondary,
+            color: isSelected ? _accentColor.withValues(alpha: 0.15) : colors.bgSecondary,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: isSelected ? _accentColor : AppColors.border,
-            ),
+            border: Border.all(color: isSelected ? _accentColor : colors.border),
           ),
           child: Row(
             children: [
               Icon(
-                isSelected
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
+                isSelected ? Icons.check_box : Icons.check_box_outline_blank,
                 size: 18,
-                color: isSelected ? _accentColor : AppColors.textMuted,
+                color: isSelected ? _accentColor : colors.textMuted,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -302,9 +267,7 @@ class _AskUserBarState extends State<AskUserBar> {
                     Text(
                       label,
                       style: TextStyle(
-                        color: isSelected
-                            ? _accentLight
-                            : AppColors.textPrimary,
+                        color: isSelected ? _accentLight : colors.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -313,10 +276,7 @@ class _AskUserBarState extends State<AskUserBar> {
                       const SizedBox(height: 2),
                       Text(
                         description,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: colors.textSecondary, fontSize: 11),
                       ),
                     ],
                   ],

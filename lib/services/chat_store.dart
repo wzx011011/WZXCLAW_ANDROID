@@ -227,7 +227,7 @@ class ChatStore {
         final truncatedOutput =
             output.length > 500 ? '${output.substring(0, 500)}…' : output;
         final summary = _extractResultSummary(
-            _messages[i].toolName ?? '', output, isError);
+            _messages[i].toolName ?? '', output, isError,);
         _messages[i] = _messages[i].copyWith(
           toolStatus: isError ? ToolCallStatus.error : ToolCallStatus.done,
           toolOutput: truncatedOutput,
@@ -356,7 +356,7 @@ class ChatStore {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.permissionResponse,
       data: {'toolCallId': toolCallId, 'approved': approved},
-    ));
+    ),);
     if (!_permissionController.isClosed) {
       _permissionController.add(null); // Clear the request
     }
@@ -396,7 +396,7 @@ class ChatStore {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.planDecision,
       data: {'approved': approved},
-    ));
+    ),);
     if (!_planModeController.isClosed) {
       _planModeController.add(null); // Clear plan mode bar
     }
@@ -427,7 +427,7 @@ class ChatStore {
 
   /// Send an answer to an AskUserQuestion back to the desktop.
   void respondToAskUser(String questionId, List<String> selectedLabels,
-      {String? customText}) {
+      {String? customText,}) {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.askUserAnswer,
       data: {
@@ -435,7 +435,7 @@ class ChatStore {
         'selectedLabels': selectedLabels,
         if (customText != null) 'customText': customText,
       },
-    ));
+    ),);
     if (!_askUserController.isClosed) {
       _askUserController.add(null); // Clear the question
     }
@@ -552,14 +552,14 @@ class ChatStore {
       WsMessage(event: WsEvents.commandSend, data: {
         'content': text,
         if (_currentSessionId != null) 'sessionId': _currentSessionId,
-      }),
+      },),
     );
     _setWaiting(true);
     _notifyListeners();
   }
 
   void stopGeneration() {
-    ConnectionManager.instance.send(WsMessage(event: WsEvents.commandStop));
+    ConnectionManager.instance.send(const WsMessage(event: WsEvents.commandStop));
     _finalizeStreamingMessage();
     _isStreaming = false;
     _setWaiting(false);

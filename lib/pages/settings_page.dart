@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/app_colors.dart';
+import '../main.dart' show themeNotifier;
 import '../models/connection_state.dart';
 import '../services/connection_manager.dart';
 import '../services/session_sync_service.dart';
@@ -85,29 +87,37 @@ class _SettingsPageState extends State<SettingsPage> {
       MaterialPageRoute(builder: (context) => const _QrScannerPage()),
     );
     if (result != null && result.isNotEmpty && mounted) {
-      // Validate it looks like a wzxClaw relay URL
       if (!result.startsWith('wss://') && !result.startsWith('ws://')) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请扫描桌面端 wzxClaw 的连接二维码'), duration: Duration(seconds: 2)),
+          const SnackBar(
+            content: Text('请扫描桌面端 wzxClaw 的连接二维码'),
+            duration: Duration(seconds: 2),
+          ),
         );
         return;
       }
       try {
         final uri = Uri.parse(result);
-        _serverUrlController.text = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
+        _serverUrlController.text =
+            '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
         _tokenController.text = uri.queryParameters['token'] ?? '';
         setState(() {});
-        // Auto-save and connect after successful scan
         _saveValues();
         _connect();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('正在连接...'), duration: Duration(seconds: 2)),
+            const SnackBar(
+              content: Text('正在连接...'),
+              duration: Duration(seconds: 2),
+            ),
           );
         }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('二维码内容无法解析'), duration: Duration(seconds: 2)),
+          const SnackBar(
+            content: Text('二维码内容无法解析'),
+            duration: Duration(seconds: 2),
+          ),
         );
       }
     }
@@ -115,26 +125,24 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    const bgColor = Color(0xFF1A1A2E);
-    const surfaceColor = Color(0xFF16213E);
-    const accentColor = Color(0xFF6366F1);
+    final colors = AppColors.of(context);
 
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: colors.bgPrimary,
       appBar: AppBar(
         title: const Text('设置'),
-        backgroundColor: surfaceColor,
-        foregroundColor: Colors.white,
+        backgroundColor: colors.bgSecondary,
+        foregroundColor: colors.textPrimary,
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: accentColor))
+          ? Center(child: CircularProgressIndicator(color: colors.accent))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 // -- Server URL field with scan button --
-                const Text(
+                Text(
                   '服务器地址',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -142,12 +150,12 @@ class _SettingsPageState extends State<SettingsPage> {
                     Expanded(
                       child: TextField(
                         controller: _serverUrlController,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: colors.textPrimary),
                         decoration: InputDecoration(
                           hintText: 'wss://5945.top/relay/',
-                          hintStyle: const TextStyle(color: Colors.white38),
+                          hintStyle: TextStyle(color: colors.textMuted),
                           filled: true,
-                          fillColor: surfaceColor,
+                          fillColor: colors.bgSecondary,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                             borderSide: BorderSide.none,
@@ -161,7 +169,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(width: 8),
                     IconButton(
-                      icon: const Icon(Icons.qr_code_scanner, color: accentColor, size: 28),
+                      icon: Icon(Icons.qr_code_scanner,
+                          color: colors.accent, size: 28,),
                       onPressed: _scanQrCode,
                       tooltip: '扫描二维码',
                     ),
@@ -170,20 +179,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 20),
 
                 // -- Token field --
-                const Text(
+                Text(
                   'Token',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _tokenController,
                   obscureText: _obscureToken,
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: colors.textPrimary),
                   decoration: InputDecoration(
                     hintText: '输入连接令牌',
-                    hintStyle: const TextStyle(color: Colors.white38),
+                    hintStyle: TextStyle(color: colors.textMuted),
                     filled: true,
-                    fillColor: surfaceColor,
+                    fillColor: colors.bgSecondary,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: BorderSide.none,
@@ -194,8 +203,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscureToken ? Icons.visibility_off : Icons.visibility,
-                        color: Colors.white54,
+                        _obscureToken
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                        color: colors.textSecondary,
                       ),
                       onPressed: () {
                         setState(() => _obscureToken = !_obscureToken);
@@ -212,7 +223,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: ElevatedButton(
                         onPressed: _connect,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: accentColor,
+                          backgroundColor: colors.accent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
@@ -227,8 +238,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: OutlinedButton(
                         onPressed: _disconnect,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white38),
+                          foregroundColor: colors.textPrimary,
+                          side: BorderSide(color: colors.border),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -246,29 +257,59 @@ class _SettingsPageState extends State<SettingsPage> {
                   stream: ConnectionManager.instance.stateStream,
                   initialData: ConnectionManager.instance.state,
                   builder: (context, snapshot) {
-                    final state = snapshot.data ?? WsConnectionState.disconnected;
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: surfaceColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Text(
-                            '当前状态: ',
-                            style: TextStyle(color: Colors.white70, fontSize: 14),
+                    final state =
+                        snapshot.data ?? WsConnectionState.disconnected;
+                    return StreamBuilder<String?>(
+                      stream: ConnectionManager.instance.errorStream,
+                      initialData: ConnectionManager.instance.lastError,
+                      builder: (context, errorSnap) {
+                        final error = errorSnap.data;
+                        final hasError = error != null &&
+                            error.isNotEmpty &&
+                            state != WsConnectionState.connected;
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: colors.bgSecondary,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          Text(
-                            state.label,
-                            style: TextStyle(
-                              color: _stateColor(state),
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    '当前状态: ',
+                                    style: TextStyle(
+                                        color: colors.textSecondary,
+                                        fontSize: 14,),
+                                  ),
+                                  Text(
+                                    state.label,
+                                    style: TextStyle(
+                                      color: _stateColor(state),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (hasError) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  error,
+                                  style: TextStyle(
+                                    color: colors.textMuted,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     );
                   },
                 ),
@@ -276,16 +317,49 @@ class _SettingsPageState extends State<SettingsPage> {
 
                 // -- Push notification toggle --
                 SwitchListTile(
-                  title: const Text('推送通知', style: TextStyle(color: Colors.white, fontSize: 14)),
-                  subtitle: const Text('AI 任务完成时发送通知',
-                      style: TextStyle(color: Colors.white70, fontSize: 13)),
+                  title: Text('推送通知',
+                      style: TextStyle(
+                          color: colors.textPrimary, fontSize: 14,),),
+                  subtitle: Text('AI 任务完成时发送通知',
+                      style: TextStyle(
+                          color: colors.textSecondary, fontSize: 13,),),
                   value: _pushEnabled,
-                  activeColor: const Color(0xFF6366F1),
-                  inactiveThumbColor: Colors.white,
-                  inactiveTrackColor: Colors.white24,
+                  activeTrackColor: colors.accent.withValues(alpha: 0.4),
+                  activeThumbColor: colors.accent,
+                  inactiveThumbColor: colors.textSecondary,
+                  inactiveTrackColor: colors.border,
                   onChanged: _togglePushNotifications,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 ),
+                const SizedBox(height: 24),
+
+                // -- Theme mode selector --
+                Text(
+                  '主题模式',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                ValueListenableBuilder<ThemeMode>(
+                  valueListenable: themeNotifier,
+                  builder: (context, currentMode, _) {
+                    return Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: colors.bgSecondary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          _themeButton('跟随系统', ThemeMode.system, currentMode, colors),
+                          _themeButton('浅色', ThemeMode.light, currentMode, colors),
+                          _themeButton('深色', ThemeMode.dark, currentMode, colors),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
                 const SizedBox(height: 24),
 
                 // -- Workspace info --
@@ -297,22 +371,28 @@ class _SettingsPageState extends State<SettingsPage> {
                     return Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: surfaceColor,
+                        color: colors.bgSecondary,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('工作区', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w500)),
+                          Text('工作区',
+                              style: TextStyle(
+                                  color: colors.textSecondary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,),),
                           const SizedBox(height: 8),
                           Text(
                             info != null ? info.workspaceName : '未连接',
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            style: TextStyle(
+                                color: colors.textPrimary, fontSize: 14,),
                           ),
                           if (info != null)
                             Text(
                               info.workspacePath,
-                              style: const TextStyle(color: Colors.white38, fontSize: 12),
+                              style: TextStyle(
+                                  color: colors.textMuted, fontSize: 12,),
                               overflow: TextOverflow.ellipsis,
                             ),
                         ],
@@ -323,14 +403,44 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 24),
 
                 // -- Version info --
-                const Center(
+                Center(
                   child: Text(
                     'wzxClaw Android v2.0',
-                    style: TextStyle(color: Colors.white24, fontSize: 12),
+                    style: TextStyle(color: colors.textMuted, fontSize: 12),
                   ),
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _themeButton(String label, ThemeMode mode, ThemeMode current, AppColors colors) {
+    final selected = mode == current;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () async {
+          themeNotifier.value = mode;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('theme_mode', mode == ThemeMode.light ? 'light' : mode == ThemeMode.dark ? 'dark' : 'system');
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? colors.accent.withValues(alpha: 0.15) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: selected ? Border.all(color: colors.accent, width: 1.5) : null,
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: selected ? colors.accent : colors.textSecondary,
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -340,7 +450,7 @@ class _SettingsPageState extends State<SettingsPage> {
         return Colors.green;
       case WsConnectionState.connecting:
       case WsConnectionState.reconnecting:
-        return Colors.yellow;
+        return Colors.orange;
       case WsConnectionState.disconnected:
         return Colors.red;
     }
@@ -368,6 +478,7 @@ class _QrScannerPageState extends State<_QrScannerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final size = MediaQuery.of(context).size;
     final scanSize = size.width * 0.7;
 
@@ -375,11 +486,12 @@ class _QrScannerPageState extends State<_QrScannerPage> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text('扫描二维码'),
-        backgroundColor: const Color(0xFF16213E),
-        foregroundColor: Colors.white,
+        backgroundColor: colors.bgSecondary,
+        foregroundColor: colors.textPrimary,
         actions: [
           IconButton(
-            icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off, color: Colors.white70),
+            icon: Icon(_torchOn ? Icons.flash_on : Icons.flash_off,
+                color: colors.textSecondary,),
             onPressed: () {
               setState(() => _torchOn = !_torchOn);
               _controller.toggleTorch();
@@ -394,6 +506,7 @@ class _QrScannerPageState extends State<_QrScannerPage> {
             controller: _controller,
             onDetect: (capture) {
               if (_scanned) return;
+              if (capture.barcodes.isEmpty) return;
               final barcode = capture.barcodes.first;
               if (barcode.rawValue != null) {
                 _scanned = true;
@@ -404,11 +517,15 @@ class _QrScannerPageState extends State<_QrScannerPage> {
           ),
           // Dimmed overlay with transparent scan window
           ColorFiltered(
-            colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.5), BlendMode.srcOut),
+            colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.5), BlendMode.srcOut,),
             child: Stack(
               children: [
                 Container(
-                  decoration: const BoxDecoration(color: Colors.black, backgroundBlendMode: BlendMode.dstOut),
+                  decoration: const BoxDecoration(
+                    color: Colors.black,
+                    backgroundBlendMode: BlendMode.dstOut,
+                  ),
                 ),
                 Center(
                   child: Container(
@@ -428,7 +545,8 @@ class _QrScannerPageState extends State<_QrScannerPage> {
             child: SizedBox(
               width: scanSize,
               height: scanSize,
-              child: CustomPaint(painter: _ScanFramePainter()),
+              child: CustomPaint(
+                  painter: _ScanFramePainter(color: colors.accent),),
             ),
           ),
           // Hint text
@@ -436,10 +554,10 @@ class _QrScannerPageState extends State<_QrScannerPage> {
             left: 0,
             right: 0,
             bottom: size.height * 0.2,
-            child: const Text(
+            child: Text(
               '将二维码放入框内自动扫描',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70, fontSize: 14),
+              style: TextStyle(color: colors.textSecondary, fontSize: 14),
             ),
           ),
         ],
@@ -450,30 +568,40 @@ class _QrScannerPageState extends State<_QrScannerPage> {
 
 /// Paints four corner brackets for the scan frame.
 class _ScanFramePainter extends CustomPainter {
+  final Color color;
+  const _ScanFramePainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     const cornerLen = 24.0;
     const strokeWidth = 3.0;
     final paint = Paint()
-      ..color = const Color(0xFF6366F1)
+      ..color = color
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
     // Top-left
     canvas.drawLine(const Offset(0, cornerLen), Offset.zero, paint);
-    canvas.drawLine(Offset.zero, Offset(cornerLen, 0), paint);
+    canvas.drawLine(Offset.zero, const Offset(cornerLen, 0), paint);
     // Top-right
-    canvas.drawLine(Offset(size.width - cornerLen, 0), Offset(size.width, 0), paint);
-    canvas.drawLine(Offset(size.width, 0), Offset(size.width, cornerLen), paint);
+    canvas.drawLine(
+        Offset(size.width - cornerLen, 0), Offset(size.width, 0), paint,);
+    canvas.drawLine(
+        Offset(size.width, 0), Offset(size.width, cornerLen), paint,);
     // Bottom-left
-    canvas.drawLine(Offset(0, size.height), Offset(0, size.height - cornerLen), paint);
-    canvas.drawLine(Offset(0, size.height), Offset(cornerLen, size.height), paint);
+    canvas.drawLine(
+        Offset(0, size.height), Offset(0, size.height - cornerLen), paint,);
+    canvas.drawLine(
+        Offset(0, size.height), Offset(cornerLen, size.height), paint,);
     // Bottom-right
-    canvas.drawLine(Offset(size.width, size.height - cornerLen), Offset(size.width, size.height), paint);
-    canvas.drawLine(Offset(size.width - cornerLen, size.height), Offset(size.width, size.height), paint);
+    canvas.drawLine(Offset(size.width, size.height - cornerLen),
+        Offset(size.width, size.height), paint,);
+    canvas.drawLine(Offset(size.width - cornerLen, size.height),
+        Offset(size.width, size.height), paint,);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ScanFramePainter oldDelegate) =>
+      color != oldDelegate.color;
 }

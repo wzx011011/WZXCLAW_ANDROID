@@ -41,6 +41,7 @@ class _HomePageState extends State<HomePage> {
   bool _isStreaming = false;
   bool _isWaiting = false;
   bool _showScrollFab = false;
+  bool _scrollPending = false;
   int _previousGroupCount = 0;
   String? _desktopIdentity;
   PermissionRequest? _permissionRequest;
@@ -162,14 +163,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _clearSession() {
+    final colors = AppColors.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgElevated,
-        title:
-            const Text('清空会话', style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text('确定要清空所有消息吗？',
-            style: TextStyle(color: AppColors.textSecondary)),
+        backgroundColor: colors.bgElevated,
+        title: Text('清空会话', style: TextStyle(color: colors.textPrimary)),
+        content:
+            Text('确定要清空所有消息吗？', style: TextStyle(color: colors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -180,8 +181,7 @@ class _HomePageState extends State<HomePage> {
               Navigator.pop(ctx);
               ChatStore.instance.clearSession();
             },
-            child:
-                const Text('清空', style: TextStyle(color: AppColors.error)),
+            child: Text('清空', style: TextStyle(color: colors.error)),
           ),
         ],
       ),
@@ -189,16 +189,17 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showMessageActions(ChatMessage msg) {
+    final colors = AppColors.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E2E),
+      backgroundColor: colors.bgElevated,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.copy, color: Colors.white70),
-              title: const Text('复制文本', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.copy, color: colors.textSecondary),
+              title: Text('复制文本', style: TextStyle(color: colors.textPrimary)),
               onTap: () {
                 Clipboard.setData(ClipboardData(text: msg.content));
                 Navigator.pop(ctx);
@@ -213,16 +214,17 @@ class _HomePageState extends State<HomePage> {
             ),
             if (msg.role == MessageRole.user)
               ListTile(
-                leading: const Icon(Icons.refresh, color: Colors.white70),
-                title: const Text('重新发送', style: TextStyle(color: Colors.white)),
+                leading: Icon(Icons.refresh, color: colors.textSecondary),
+                title:
+                    Text('重新发送', style: TextStyle(color: colors.textPrimary)),
                 onTap: () {
                   Navigator.pop(ctx);
                   ChatStore.instance.sendMessage(msg.content);
                 },
               ),
             ListTile(
-              leading: const Icon(Icons.share, color: Colors.white70),
-              title: const Text('分享', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.share, color: colors.textSecondary),
+              title: Text('分享', style: TextStyle(color: colors.textPrimary)),
               onTap: () {
                 Navigator.pop(ctx);
                 Clipboard.setData(ClipboardData(text: msg.content));
@@ -242,7 +244,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _scrollToBottom() {
+    if (_scrollPending) return; // already scheduled for this frame
+    _scrollPending = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollPending = false;
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -253,23 +258,21 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  String _formatTime(DateTime dt) =>
-      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: colors.bgPrimary,
       appBar: AppBar(
-        backgroundColor: AppColors.bgSecondary,
+        backgroundColor: colors.bgSecondary,
         title: StreamBuilder<String?>(
           stream: SessionSyncService.instance.activeSessionStream,
           initialData: SessionSyncService.instance.activeSessionId,
           builder: (context, snapshot) {
             final sessionId = snapshot.data;
             if (sessionId == null) {
-              return const Text('wzxClaw',
-                  style: TextStyle(color: AppColors.textPrimary));
+              return Text('wzxClaw',
+                  style: TextStyle(color: colors.textPrimary),);
             }
             // Find session title from cached sessions
             final sessions = SessionSyncService.instance.sessions;
@@ -278,20 +281,18 @@ class _HomePageState extends State<HomePage> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('wzxClaw',
-                    style: TextStyle(
-                        color: AppColors.textPrimary, fontSize: 16)),
+                Text('wzxClaw',
+                    style: TextStyle(color: colors.textPrimary, fontSize: 16),),
                 Text(
                   title,
-                  style: const TextStyle(
-                      color: AppColors.textSecondary, fontSize: 11),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             );
           },
         ),
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        iconTheme: IconThemeData(color: colors.textPrimary),
         actions: [
           // Return to live chat (clear active session)
           StreamBuilder<String?>(
@@ -327,10 +328,18 @@ class _HomePageState extends State<HomePage> {
           StreamBuilder<WsConnectionState>(
             stream: ConnectionManager.instance.stateStream,
             initialData: ConnectionManager.instance.state,
-            builder: (context, snapshot) {
-              return ConnectionStatusBar(
-                  state: snapshot.data ?? WsConnectionState.disconnected,
-                  desktopIdentity: _desktopIdentity);
+            builder: (context, stateSnap) {
+              return StreamBuilder<String?>(
+                stream: ConnectionManager.instance.errorStream,
+                initialData: ConnectionManager.instance.lastError,
+                builder: (context, errorSnap) {
+                  return ConnectionStatusBar(
+                    state: stateSnap.data ?? WsConnectionState.disconnected,
+                    desktopIdentity: _desktopIdentity,
+                    errorMessage: errorSnap.data,
+                  );
+                },
+              );
             },
           ),
           Expanded(
@@ -350,9 +359,9 @@ class _HomePageState extends State<HomePage> {
                           _scrollToBottom();
                           setState(() => _showScrollFab = false);
                         },
-                        backgroundColor: AppColors.bgElevated,
-                        child: const Icon(Icons.keyboard_arrow_down,
-                            color: AppColors.textPrimary),
+                        backgroundColor: colors.bgElevated,
+                        child: Icon(Icons.keyboard_arrow_down,
+                            color: colors.textPrimary,),
                       ),
                     ),
                   ),
@@ -386,10 +395,11 @@ class _HomePageState extends State<HomePage> {
   // ── Message list ───────────────────────────────────────────────────
 
   Widget _buildMessageList() {
+    final colors = AppColors.of(context);
     if (_displayMessages.isEmpty && !_isWaiting) {
-      return const Center(
+      return Center(
         child: Text('暂无消息',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 14)),
+            style: TextStyle(color: colors.textMuted, fontSize: 14),),
       );
     }
 
@@ -462,28 +472,29 @@ class _HomePageState extends State<HomePage> {
   // ── User bubble ────────────────────────────────────────────────────
 
   Widget _buildUserBubble(ChatMessage msg) {
+    final colors = AppColors.of(context);
     final screenWidth = MediaQuery.of(context).size.width;
     return GestureDetector(
       onLongPress: () => _showMessageActions(msg),
       child: Align(
-      alignment: Alignment.centerRight,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: screenWidth * 0.80),
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.userBubble,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomLeft: Radius.circular(16),
-            bottomRight: Radius.circular(4),
+        alignment: Alignment.centerRight,
+        child: Container(
+          constraints: BoxConstraints(maxWidth: screenWidth * 0.80),
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: colors.userBubble,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(4),
+            ),
           ),
+          child: Text(msg.content,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 13, height: 1.5,),),
         ),
-        child: Text(msg.content,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 13, height: 1.5)),
-      ),
       ),
     );
   }
@@ -491,98 +502,107 @@ class _HomePageState extends State<HomePage> {
   // ── Assistant block with Markdown ──────────────────────────────────
 
   Widget _buildAssistantBlock(ChatMessage msg) {
+    final colors = AppColors.of(context);
     return GestureDetector(
       onLongPress: () => _showMessageActions(msg),
       child: Container(
-      width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: const BoxDecoration(
-        color: AppColors.assistantBubble,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(4),
-          topRight: Radius.circular(16),
-          bottomLeft: Radius.circular(16),
-          bottomRight: Radius.circular(16),
+        width: double.infinity,
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: colors.assistantBubble,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(4),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(16),
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildMarkdownBody(msg.content),
-          if (msg.isStreaming) const StreamingShimmer(),
-          // Token usage footer
-          if (msg.usage != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'In: ${_formatTokens(msg.usage!.inputTokens)} · Out: ${_formatTokens(msg.usage!.outputTokens)}',
-                style: const TextStyle(
-                    color: AppColors.textMuted, fontSize: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildMarkdownBody(msg.content, isStreaming: msg.isStreaming),
+            if (msg.isStreaming) const StreamingShimmer(),
+            // Token usage footer
+            if (msg.usage != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'In: ${_formatTokens(msg.usage!.inputTokens)} · Out: ${_formatTokens(msg.usage!.outputTokens)}',
+                  style: TextStyle(color: colors.textMuted, fontSize: 10),
+                ),
               ),
-            ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildMarkdownBody(String rawContent) {
+  Widget _buildMarkdownBody(String rawContent, {bool isStreaming = false}) {
+    final colors = AppColors.of(context);
     // Strip <details>...</details> blocks — tool outputs are shown via ToolCallGroup
-    final content = rawContent.replaceAll(RegExp(r'<details[\s\S]*?</details>'), '').trim();
+    final content =
+        rawContent.replaceAll(RegExp(r'<details[\s\S]*?</details>'), '').trim();
     if (content.isEmpty) return const SizedBox.shrink();
+    // During streaming, skip markdown parsing — render plain text to avoid:
+    //  - O(n) re-parse on every chunk
+    //  - Broken unclosed syntax (e.g. **bold, ```code block)
+    if (isStreaming) {
+      return SelectableText(
+        content,
+        style: TextStyle(color: colors.textPrimary, fontSize: 13, height: 1.5),
+      );
+    }
     return MarkdownBody(
       data: content,
       selectable: true,
       styleSheet: MarkdownStyleSheet(
         // Text
-        p: const TextStyle(
-            color: AppColors.textPrimary, fontSize: 13, height: 1.5),
+        p: TextStyle(color: colors.textPrimary, fontSize: 13, height: 1.5),
         pPadding: const EdgeInsets.only(bottom: 6),
-        h1: const TextStyle(
-            color: AppColors.textPrimary,
+        h1: TextStyle(
+            color: colors.textPrimary,
             fontSize: 16,
-            fontWeight: FontWeight.bold),
-        h2: const TextStyle(
-            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,),
+        h2: TextStyle(
+            color: colors.textPrimary,
             fontSize: 14,
-            fontWeight: FontWeight.bold),
-        h3: const TextStyle(
-            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,),
+        h3: TextStyle(
+            color: colors.textPrimary,
             fontSize: 13,
-            fontWeight: FontWeight.bold),
-        listBullet: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+            fontWeight: FontWeight.bold,),
+        listBullet: TextStyle(color: colors.textPrimary, fontSize: 13),
         listBulletPadding: const EdgeInsets.only(right: 6),
         // Inline code
         code: TextStyle(
-          color: AppColors.textPrimary,
-          backgroundColor: AppColors.bgPrimary,
+          color: colors.textPrimary,
+          backgroundColor: colors.bgPrimary,
           fontFamily: 'monospace',
           fontSize: 12,
         ),
         // Block code
         codeblockDecoration: BoxDecoration(
-          color: AppColors.bgPrimary,
+          color: colors.bgPrimary,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: colors.border),
         ),
         codeblockPadding: const EdgeInsets.all(12),
         // Links
-        a: const TextStyle(color: AppColors.accent),
+        a: TextStyle(color: colors.accent),
         // Blockquote
         blockquoteDecoration: BoxDecoration(
-          border: Border(
-              left: BorderSide(color: AppColors.accent, width: 3)),
+          border: Border(left: BorderSide(color: colors.accent, width: 3)),
         ),
         blockquotePadding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
-        // Table
-        tableHead: const TextStyle(
-            color: AppColors.textPrimary, fontWeight: FontWeight.bold),
-        tableBody: const TextStyle(color: AppColors.textPrimary),
-        tableBorder: TableBorder.all(color: AppColors.border),
+        // Table — use tableBorder for visible contrast on dark/light backgrounds
+        tableHead:
+            TextStyle(color: colors.textPrimary, fontWeight: FontWeight.bold),
+        tableBody: TextStyle(color: colors.textPrimary),
+        tableBorder: TableBorder.all(color: colors.tableBorder),
         // Horizontal rule
         horizontalRuleDecoration: BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.border)),
+          border: Border(top: BorderSide(color: colors.border)),
         ),
       ),
       builders: {
@@ -638,14 +658,15 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildSlashSuggestions() {
     if (_slashSuggestions.isEmpty) return const SizedBox.shrink();
+    final colors = AppColors.of(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.bgElevated,
+        color: colors.bgElevated,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: colors.border),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -653,14 +674,13 @@ class _HomePageState extends State<HomePage> {
           return InkWell(
             onTap: () => _selectSlashCommand(cmd),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
                   Text(
                     cmd.command,
-                    style: const TextStyle(
-                      color: AppColors.accent,
+                    style: TextStyle(
+                      color: colors.accent,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       fontFamily: 'monospace',
@@ -670,8 +690,8 @@ class _HomePageState extends State<HomePage> {
                   Expanded(
                     child: Text(
                       cmd.description,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
+                      style: TextStyle(
+                        color: colors.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -692,15 +712,15 @@ class _HomePageState extends State<HomePage> {
       stream: ConnectionManager.instance.stateStream,
       initialData: ConnectionManager.instance.state,
       builder: (context, snapshot) {
+        final colors = AppColors.of(context);
         final state = snapshot.data ?? WsConnectionState.disconnected;
         final isConnected = state == WsConnectionState.connected;
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: const BoxDecoration(
-            color: AppColors.bgSecondary,
-            border:
-                Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+          decoration: BoxDecoration(
+            color: colors.bgSecondary,
+            border: Border(top: BorderSide(color: colors.border, width: 0.5)),
           ),
           child: SafeArea(
             top: false,
@@ -710,24 +730,23 @@ class _HomePageState extends State<HomePage> {
                   child: TextField(
                     controller: _inputController,
                     enabled: isConnected,
-                    style: const TextStyle(
-                        color: AppColors.textPrimary, fontSize: 14),
+                    style: TextStyle(color: colors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: isConnected
-                          ? (_desktopIdentity != null ? '$_desktopIdentity — 输入指令...' : '输入指令...')
+                          ? (_desktopIdentity != null
+                              ? '$_desktopIdentity — 输入指令...'
+                              : '输入指令...')
                           : '未连接',
-                      hintStyle:
-                          const TextStyle(color: AppColors.textMuted),
+                      hintStyle: TextStyle(color: colors.textMuted),
                       filled: true,
-                      fillColor: isConnected
-                          ? AppColors.bgInput
-                          : AppColors.bgPrimary,
+                      fillColor:
+                          isConnected ? colors.bgInput : colors.bgPrimary,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                          horizontal: 12, vertical: 10,),
                     ),
                     maxLines: 5,
                     minLines: 1,
@@ -751,8 +770,8 @@ class _HomePageState extends State<HomePage> {
                 if (_isStreaming)
                   IconButton(
                     onPressed: () => ChatStore.instance.stopGeneration(),
-                    icon: const Icon(Icons.stop_circle,
-                        color: AppColors.error, size: 28),
+                    icon:
+                        Icon(Icons.stop_circle, color: colors.error, size: 28),
                     tooltip: '停止生成',
                   )
                 else
@@ -760,8 +779,7 @@ class _HomePageState extends State<HomePage> {
                     onPressed: isConnected ? _sendMessage : null,
                     icon: Icon(
                       Icons.send,
-                      color:
-                          isConnected ? AppColors.accent : AppColors.textMuted,
+                      color: isConnected ? colors.accent : colors.textMuted,
                     ),
                   ),
               ],
@@ -777,8 +795,7 @@ class _HomePageState extends State<HomePage> {
 
 class _CodeBlockBuilder extends MarkdownElementBuilder {
   @override
-  Widget? visitElementAfter(
-      md.Element element, TextStyle? preferredStyle) {
+  Widget? visitElementAfter(md.Element element, TextStyle? preferredStyle) {
     final code = element.textContent;
     // Determine language from the element info
     String? language;
@@ -788,6 +805,10 @@ class _CodeBlockBuilder extends MarkdownElementBuilder {
         language = cls.substring(9);
       }
     }
+
+    // Skip inline code — only render block code (has newlines or explicit language)
+    final isInline = !code.contains('\n') && language == null;
+    if (isInline) return null;
 
     return _CodeBlockWidget(code: code, language: language);
   }
@@ -808,6 +829,7 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final code = widget.code;
     final language = widget.language;
     final lineCount = '\n'.allMatches(code).length + 1;
@@ -827,8 +849,8 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.bgPrimary,
-        border: Border.all(color: AppColors.border),
+        color: colors.bgPrimary,
+        border: Border.all(color: colors.border),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
@@ -838,9 +860,9 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: const BoxDecoration(
-              color: AppColors.bgTertiary,
-              borderRadius: BorderRadius.only(
+            decoration: BoxDecoration(
+              color: colors.bgTertiary,
+              borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(6),
                 topRight: Radius.circular(6),
               ),
@@ -849,10 +871,10 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
               children: [
                 Text(
                   language?.toLowerCase() ?? 'code',
-                  style: const TextStyle(
-                      color: AppColors.textSecondary,
+                  style: TextStyle(
+                      color: colors.textSecondary,
                       fontSize: 11,
-                      fontFamily: 'monospace'),
+                      fontFamily: 'monospace',),
                 ),
                 const Spacer(),
                 GestureDetector(
@@ -866,14 +888,14 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
                       ),
                     );
                   },
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.copy, size: 12, color: AppColors.textSecondary),
-                      SizedBox(width: 3),
+                      Icon(Icons.copy, size: 12, color: colors.textSecondary),
+                      const SizedBox(width: 3),
                       Text('Copy',
                           style: TextStyle(
-                              color: AppColors.textSecondary, fontSize: 11)),
+                              color: colors.textSecondary, fontSize: 11,),),
                     ],
                   ),
                 ),
@@ -895,11 +917,11 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
                 child: SelectableText.rich(
                   TextSpan(
                     children: spans,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
                       height: 1.5,
-                      color: AppColors.textPrimary,
+                      color: colors.textPrimary,
                     ),
                   ),
                 ),
@@ -913,20 +935,18 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                decoration: const BoxDecoration(
-                  color: AppColors.bgTertiary,
-                  borderRadius: BorderRadius.only(
+                decoration: BoxDecoration(
+                  color: colors.bgTertiary,
+                  borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(6),
                     bottomRight: Radius.circular(6),
                   ),
                 ),
                 child: Text(
-                  _collapsed
-                      ? 'Show more ($lineCount lines)'
-                      : 'Show less',
+                  _collapsed ? 'Show more ($lineCount lines)' : 'Show less',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.accent,
+                  style: TextStyle(
+                    color: colors.accent,
                     fontSize: 11,
                   ),
                 ),

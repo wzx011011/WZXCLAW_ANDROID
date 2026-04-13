@@ -70,27 +70,26 @@ class _FileViewerPageState extends State<FileViewerPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: colors.bgPrimary,
       appBar: AppBar(
-        backgroundColor: AppColors.bgSecondary,
+        backgroundColor: colors.bgSecondary,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               widget.fileName,
-              style:
-                  const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              style: TextStyle(color: colors.textPrimary, fontSize: 14),
             ),
             if (_content != null)
               Text(
                 '${_content!.language} · ${_formatSize(_content!.size)}',
-                style:
-                    const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                style: TextStyle(color: colors.textMuted, fontSize: 11),
               ),
           ],
         ),
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        iconTheme: IconThemeData(color: colors.textPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.copy),
@@ -108,6 +107,7 @@ class _FileViewerPageState extends State<FileViewerPage> {
   }
 
   Widget _buildBody() {
+    final colors = AppColors.of(context);
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -116,10 +116,9 @@ class _FileViewerPageState extends State<FileViewerPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+            Icon(Icons.error_outline, color: colors.error, size: 48),
             const SizedBox(height: 12),
-            Text(_error!,
-                style: const TextStyle(color: AppColors.textSecondary),),
+            Text(_error!, style: TextStyle(color: colors.textSecondary)),
             const SizedBox(height: 12),
             ElevatedButton(onPressed: _loadFile, child: const Text('重试')),
           ],
@@ -148,11 +147,11 @@ class _FileViewerPageState extends State<FileViewerPage> {
           child: SelectableText.rich(
             TextSpan(
               children: spans,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 12,
                 height: 1.5,
-                color: AppColors.textPrimary,
+                color: colors.textPrimary,
               ),
             ),
           ),

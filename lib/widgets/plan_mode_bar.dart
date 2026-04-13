@@ -3,7 +3,6 @@ import '../config/app_colors.dart';
 import '../services/chat_store.dart';
 
 /// A bar that appears when the desktop agent enters plan mode.
-/// Shows the proposed plan and lets the user approve or reject execution.
 class PlanModeBar extends StatelessWidget {
   final Map<String, dynamic> planData;
 
@@ -11,6 +10,7 @@ class PlanModeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final planContent = planData['plan'] as String? ??
         planData['planContent'] as String? ??
         planData['summary'] as String? ??
@@ -27,8 +27,8 @@ class PlanModeBar extends StatelessWidget {
       margin: const EdgeInsets.all(8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.bgPrimary,
-        border: Border.all(color: AppColors.warning),
+        color: colors.bgPrimary,
+        border: Border.all(color: colors.warning),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -37,13 +37,12 @@ class PlanModeBar extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.lightbulb_outline,
-                  size: 16, color: AppColors.warning),
+              Icon(Icons.lightbulb_outline, size: 16, color: colors.warning),
               const SizedBox(width: 6),
               Text(
                 'Plan Mode',
                 style: TextStyle(
-                  color: AppColors.warning,
+                  color: colors.warning,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -51,10 +50,7 @@ class PlanModeBar extends StatelessWidget {
               const Spacer(),
               Text(
                 'Review the plan before execution',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: colors.textMuted, fontSize: 11),
               ),
             ],
           ),
@@ -64,17 +60,13 @@ class PlanModeBar extends StatelessWidget {
             constraints: const BoxConstraints(maxHeight: 160),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.bgSecondary,
+              color: colors.bgSecondary,
               borderRadius: BorderRadius.circular(4),
             ),
             child: SingleChildScrollView(
               child: Text(
                 displayContent,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 12,
-                  height: 1.4,
-                ),
+                style: TextStyle(color: colors.textPrimary, fontSize: 12, height: 1.4),
               ),
             ),
           ),
@@ -83,36 +75,29 @@ class PlanModeBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: () {
-                  ChatStore.instance.respondToPlan(false);
-                },
+                onPressed: () => ChatStore.instance.respondToPlan(false),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  foregroundColor: colors.error,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: AppColors.error),
+                    side: BorderSide(color: colors.error),
                   ),
                 ),
                 child: const Text('Reject', style: TextStyle(fontSize: 12)),
               ),
               const SizedBox(width: 8),
               TextButton(
-                onPressed: () {
-                  ChatStore.instance.respondToPlan(true);
-                },
+                onPressed: () => ChatStore.instance.respondToPlan(true),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.success,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  foregroundColor: colors.success,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: AppColors.success),
+                    side: BorderSide(color: colors.success),
                   ),
                 ),
-                child: const Text('Approve & Execute',
-                    style: TextStyle(fontSize: 12)),
+                child: const Text('Approve & Execute', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),

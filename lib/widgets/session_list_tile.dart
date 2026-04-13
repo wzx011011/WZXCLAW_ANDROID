@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_colors.dart';
 import '../models/session_meta.dart';
 import '../services/session_sync_service.dart';
 
 /// A single session row widget for the session list in the drawer.
-///
-/// Displays the session title, relative timestamp, message count,
-/// and a highlight if this is the currently active session.
-/// Long-press to rename or delete the session.
 class SessionListTile extends StatelessWidget {
   const SessionListTile({
     super.key,
@@ -22,26 +19,23 @@ class SessionListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return InkWell(
       onTap: onTap,
       onLongPress: () => _showSessionActions(context, session),
-      splashColor: const Color(0xFF6366F1).withValues(alpha: 0.12),
-      highlightColor: const Color(0xFF6366F1).withValues(alpha: 0.12),
+      splashColor: colors.accent.withValues(alpha: 0.12),
+      highlightColor: colors.accent.withValues(alpha: 0.12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        color: isActive ? const Color(0xFF6366F1).withValues(alpha: 0.12) : null,
+        color: isActive ? colors.accent.withValues(alpha: 0.12) : null,
         child: Row(
           children: [
-            // Chat bubble icon
             Icon(
               Icons.chat_bubble_outline,
               size: 16,
-              color: isActive
-                  ? const Color(0xFF6366F1)
-                  : Colors.white38,
+              color: isActive ? colors.accent : colors.textMuted,
             ),
             const SizedBox(width: 12),
-            // Title + meta
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -50,7 +44,8 @@ class SessionListTile extends StatelessWidget {
                     session.title,
                     style: TextStyle(
                       fontSize: 14,
-                      color: isActive ? Colors.white : Colors.white70,
+                      color:
+                          isActive ? colors.textPrimary : colors.textSecondary,
                       fontWeight:
                           isActive ? FontWeight.w600 : FontWeight.normal,
                     ),
@@ -62,33 +57,35 @@ class SessionListTile extends StatelessWidget {
                     children: [
                       Text(
                         _formatTime(session.updatedAt),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white38,
+                          color: colors.textMuted,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Text(
                         '${session.messageCount} msgs',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white38,
+                          color: colors.textMuted,
                         ),
                       ),
                       if (!session.isSynced) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
-                            color: Colors.white12,
+                            color: colors.border,
                             borderRadius: BorderRadius.circular(3),
                           ),
-                          child: const Text(
+                          child: Text(
                             '缓存',
                             style: TextStyle(
                               fontSize: 9,
-                              color: Colors.white38,
+                              color: colors.textMuted,
                             ),
                           ),
                         ),
@@ -98,11 +95,10 @@ class SessionListTile extends StatelessWidget {
                 ],
               ),
             ),
-            // Active indicator
             if (isActive)
-              const Icon(
+              Icon(
                 Icons.check_circle,
-                color: Color(0xFF6366F1),
+                color: colors.accent,
                 size: 18,
               ),
           ],
@@ -125,24 +121,26 @@ class SessionListTile extends StatelessWidget {
   }
 
   void _showSessionActions(BuildContext context, SessionMeta session) {
+    final colors = AppColors.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E2E),
+      backgroundColor: colors.bgElevated,
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.edit, color: Colors.white70),
-              title: const Text('重命名', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.edit, color: colors.textSecondary),
+              title: Text('重命名',
+                  style: TextStyle(color: colors.textPrimary),),
               onTap: () {
                 Navigator.pop(ctx);
                 _showRenameDialog(context, session);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text('删除', style: TextStyle(color: Colors.red)),
+              leading: Icon(Icons.delete, color: colors.error),
+              title: Text('删除', style: TextStyle(color: colors.error)),
               onTap: () {
                 Navigator.pop(ctx);
                 _showDeleteConfirm(context, session);
@@ -155,21 +153,26 @@ class SessionListTile extends StatelessWidget {
   }
 
   void _showRenameDialog(BuildContext context, SessionMeta session) {
+    final colors = AppColors.of(context);
     final controller = TextEditingController(text: session.title);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E2E),
-        title: const Text('重命名会话', style: TextStyle(color: Colors.white)),
+        backgroundColor: colors.bgElevated,
+        title: Text('重命名会话', style: TextStyle(color: colors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
+          style: TextStyle(color: colors.textPrimary),
+          decoration: InputDecoration(
             hintText: '输入新名称',
-            hintStyle: TextStyle(color: Colors.white38),
-            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
-            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF6366F1))),
+            hintStyle: TextStyle(color: colors.textMuted),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: colors.border),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: colors.accent),
+            ),
           ),
         ),
         actions: [
@@ -193,14 +196,15 @@ class SessionListTile extends StatelessWidget {
   }
 
   void _showDeleteConfirm(BuildContext context, SessionMeta session) {
+    final colors = AppColors.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E2E),
-        title: const Text('删除会话', style: TextStyle(color: Colors.white)),
+        backgroundColor: colors.bgElevated,
+        title: Text('删除会话', style: TextStyle(color: colors.textPrimary)),
         content: Text(
           '确定删除 "${session.title}" 吗？此操作不可撤销。',
-          style: const TextStyle(color: Colors.white70),
+          style: TextStyle(color: colors.textSecondary),
         ),
         actions: [
           TextButton(
@@ -212,7 +216,7 @@ class SessionListTile extends StatelessWidget {
               SessionSyncService.instance.deleteSession(session.id);
               Navigator.pop(ctx);
             },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text('删除', style: TextStyle(color: colors.error)),
           ),
         ],
       ),

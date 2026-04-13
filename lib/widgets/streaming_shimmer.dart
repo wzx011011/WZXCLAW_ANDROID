@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 
 /// A thin shimmer gradient bar shown at the bottom of a streaming assistant message.
-/// Replaces the block cursor for a more polished mobile experience.
 class StreamingShimmer extends StatefulWidget {
   const StreamingShimmer({super.key});
 
@@ -32,6 +31,7 @@ class _StreamingShimmerState extends State<StreamingShimmer>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return AnimatedBuilder(
       animation: _controller,
       builder: (_, __) {
@@ -44,11 +44,7 @@ class _StreamingShimmerState extends State<StreamingShimmer>
             gradient: LinearGradient(
               begin: Alignment(dx - 0.5, 0),
               end: Alignment(dx + 0.5, 0),
-              colors: const [
-                Colors.transparent,
-                AppColors.accent,
-                Colors.transparent,
-              ],
+              colors: [Colors.transparent, colors.accent, Colors.transparent],
               stops: const [0.0, 0.5, 1.0],
             ),
           ),

@@ -76,13 +76,13 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: colors.bgPrimary,
       appBar: AppBar(
-        backgroundColor: AppColors.bgSecondary,
-        title: const Text('文件浏览',
-            style: TextStyle(color: AppColors.textPrimary),),
-        iconTheme: const IconThemeData(color: AppColors.textPrimary),
+        backgroundColor: colors.bgSecondary,
+        title: Text('文件浏览', style: TextStyle(color: colors.textPrimary)),
+        iconTheme: IconThemeData(color: colors.textPrimary),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -95,6 +95,7 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
   }
 
   Widget _buildBody() {
+    final colors = AppColors.of(context);
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -103,10 +104,9 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+            Icon(Icons.error_outline, color: colors.error, size: 48),
             const SizedBox(height: 12),
-            Text(_error!,
-                style: const TextStyle(color: AppColors.textSecondary),),
+            Text(_error!, style: TextStyle(color: colors.textSecondary)),
             const SizedBox(height: 12),
             ElevatedButton(onPressed: _loadTree, child: const Text('重试')),
           ],
@@ -114,17 +114,18 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
       );
     }
     if (_tree.isEmpty) {
-      return const Center(
-        child: Text('空目录', style: TextStyle(color: AppColors.textMuted)),
+      return Center(
+        child: Text('空目录', style: TextStyle(color: colors.textMuted)),
       );
     }
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      children: _tree.map((n) => _buildNode(n, 0)).expand((w) => w).toList(),
+      children:
+          _tree.map((n) => _buildNode(n, 0, colors)).expand((w) => w).toList(),
     );
   }
 
-  List<Widget> _buildNode(FileTreeNode node, int depth) {
+  List<Widget> _buildNode(FileTreeNode node, int depth, AppColors colors) {
     final widgets = <Widget>[];
     widgets.add(
       InkWell(
@@ -137,7 +138,11 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
         },
         child: Padding(
           padding: EdgeInsets.only(
-              left: 16.0 + depth * 16, right: 16, top: 6, bottom: 6,),
+            left: 16.0 + depth * 16,
+            right: 16,
+            top: 6,
+            bottom: 6,
+          ),
           child: Row(
             children: [
               Icon(
@@ -147,14 +152,13 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
                 size: 18,
                 color: node.isDirectory
                     ? const Color(0xFFE8A838)
-                    : AppColors.textSecondary,
+                    : colors.textSecondary,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   node.name,
-                  style: const TextStyle(
-                      color: AppColors.textPrimary, fontSize: 13,),
+                  style: TextStyle(color: colors.textPrimary, fontSize: 13),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -164,7 +168,7 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
                       ? Icons.keyboard_arrow_down
                       : Icons.keyboard_arrow_right,
                   size: 16,
-                  color: AppColors.textMuted,
+                  color: colors.textMuted,
                 ),
             ],
           ),
@@ -173,7 +177,7 @@ class _FileBrowserPageState extends State<FileBrowserPage> {
     );
     if (node.isDirectory && node.isExpanded) {
       for (final child in node.children) {
-        widgets.addAll(_buildNode(child, depth + 1));
+        widgets.addAll(_buildNode(child, depth + 1, colors));
       }
     }
     return widgets;

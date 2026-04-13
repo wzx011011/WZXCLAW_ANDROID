@@ -39,6 +39,13 @@ class ConnectionManager with WidgetsBindingObserver {
       StreamController<WsMessage>.broadcast();
   Stream<WsMessage> get messageStream => _messageController.stream;
 
+  // -- Last error stream --
+  String? _lastError;
+  String? get lastError => _lastError;
+  final StreamController<String?> _errorController =
+      StreamController<String?>.broadcast();
+  Stream<String?> get errorStream => _errorController.stream;
+
   // -- Desktop identity stream --
   String? _desktopIdentity;
   String? get desktopIdentity => _desktopIdentity;
@@ -96,6 +103,7 @@ class ConnectionManager with WidgetsBindingObserver {
       _channel = WebSocketChannel.connect(Uri.parse(url));
     } catch (e) {
       // Invalid URL or connection failure -- schedule reconnect.
+      _setError('连接失败: $e');
       _scheduleReconnect();
       return;
     }
@@ -119,6 +127,7 @@ class ConnectionManager with WidgetsBindingObserver {
     // Do not wait for a message -- relay does not send anything on connect.
     _channel!.ready.then((_) {
       if (seq == _connSeq && _state == WsConnectionState.connecting) {
+        _setError(null); // Clear error on successful connection
         _setState(WsConnectionState.connected);
         _startHeartbeat();
         _startIdleMonitor();
@@ -127,10 +136,11 @@ class ConnectionManager with WidgetsBindingObserver {
         _rawSend(jsonEncode({
           'event': WsEvents.identityMobileAnnounce,
           'data': {'name': 'wzxClaw Android', 'platform': 'android'},
-        }));
+        }),);
       }
     }).catchError((error) {
       if (seq == _connSeq) {
+        _setError('握手失败: $error');
         _onChannelError(error);
       }
     });
@@ -380,6 +390,7 @@ class ConnectionManager with WidgetsBindingObserver {
   void _onChannelError(Object error) {
     _stopHeartbeat();
     _stopIdleMonitor();
+    _setError('$error');
 
     if (_state != WsConnectionState.disconnected) {
       _setState(WsConnectionState.reconnecting);
@@ -406,6 +417,11 @@ class ConnectionManager with WidgetsBindingObserver {
     if (_state == newState) return;
     _state = newState;
     _stateController.add(newState);
+  }
+
+  void _setError(String? error) {
+    _lastError = error;
+    _errorController.add(error);
   }
 
   void _rawSend(String json) {
@@ -435,5 +451,6 @@ class ConnectionManager with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _stateController.close();
     _messageController.close();
+    _errorController.close();
   }
 }

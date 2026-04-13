@@ -12,7 +12,7 @@ class PermissionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build a short summary of the input
+    final colors = AppColors.of(context);
     String inputSummary = '';
     if (request.input.isNotEmpty) {
       final encoded = const JsonEncoder.withIndent('  ').convert(request.input);
@@ -25,8 +25,8 @@ class PermissionBar extends StatelessWidget {
       margin: const EdgeInsets.all(8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.bgPrimary,
-        border: Border.all(color: AppColors.toolRunning),
+        color: colors.bgPrimary,
+        border: Border.all(color: colors.toolRunning),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -35,12 +35,12 @@ class PermissionBar extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.security, size: 16, color: AppColors.toolRunning),
+              Icon(Icons.security, size: 16, color: colors.toolRunning),
               const SizedBox(width: 6),
               Text(
                 'Permission Request',
                 style: TextStyle(
-                  color: AppColors.toolRunning,
+                  color: colors.toolRunning,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -50,10 +50,7 @@ class PermissionBar extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '${request.toolName} wants to execute:',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: colors.textSecondary, fontSize: 12),
           ),
           if (inputSummary.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -62,14 +59,14 @@ class PermissionBar extends StatelessWidget {
               constraints: const BoxConstraints(maxHeight: 120),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: AppColors.bgSecondary,
+                color: colors.bgSecondary,
                 borderRadius: BorderRadius.circular(4),
               ),
               child: SingleChildScrollView(
                 child: Text(
                   inputSummary,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
+                  style: TextStyle(
+                    color: colors.textPrimary,
                     fontSize: 11,
                     fontFamily: 'monospace',
                     height: 1.4,
@@ -83,34 +80,28 @@ class PermissionBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: () {
-                  ChatStore.instance
-                      .respondToPermission(request.toolCallId, false);
-                },
+                onPressed: () =>
+                    ChatStore.instance.respondToPermission(request.toolCallId, false),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.error,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  foregroundColor: colors.error,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: AppColors.error),
+                    side: BorderSide(color: colors.error),
                   ),
                 ),
                 child: const Text('Deny', style: TextStyle(fontSize: 12)),
               ),
               const SizedBox(width: 8),
               TextButton(
-                onPressed: () {
-                  ChatStore.instance
-                      .respondToPermission(request.toolCallId, true);
-                },
+                onPressed: () =>
+                    ChatStore.instance.respondToPermission(request.toolCallId, true),
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.success,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  foregroundColor: colors.success,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: AppColors.success),
+                    side: BorderSide(color: colors.success),
                   ),
                 ),
                 child: const Text('Approve', style: TextStyle(fontSize: 12)),

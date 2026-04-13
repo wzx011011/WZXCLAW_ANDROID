@@ -153,7 +153,7 @@ class SessionSyncService {
               Map<String, dynamic>.from(s),
               workspacePath,
               workspaceName,
-            ))
+            ),)
         .toList();
 
     _sessions = sessions;
@@ -304,7 +304,7 @@ class SessionSyncService {
       path: w['path'] as String? ?? '',
       name: w['name'] as String? ?? '',
       isCurrent: w['isCurrent'] as bool? ?? false,
-    )).toList();
+    ),).toList();
     _workspacesController.add(List.unmodifiable(_workspaces));
     _completePending(requestId, _workspaces);
   }
@@ -328,7 +328,7 @@ class SessionSyncService {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionListRequest,
       data: {'requestId': requestId},
-    ));
+    ),);
     // Timeout — also clean up pending request
     _pendingRequests[requestId] = Completer<dynamic>();
     Future.delayed(const Duration(seconds: 5), () {
@@ -390,7 +390,7 @@ class SessionSyncService {
         'offset': offset,
         'limit': limit,
       },
-    ));
+    ),);
 
     // Timeout
     Future.delayed(const Duration(seconds: 10), () {
@@ -423,7 +423,7 @@ class SessionSyncService {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionCreateRequest,
       data: {'requestId': requestId, if (title != null) 'title': title},
-    ));
+    ),);
 
     Future.delayed(const Duration(seconds: 5), () {
       if (!completer.isCompleted) {
@@ -451,7 +451,7 @@ class SessionSyncService {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionDeleteRequest,
       data: {'requestId': requestId, 'sessionId': sessionId},
-    ));
+    ),);
 
     Future.delayed(const Duration(seconds: 5), () {
       if (!completer.isCompleted) {
@@ -479,7 +479,7 @@ class SessionSyncService {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionRenameRequest,
       data: {'requestId': requestId, 'sessionId': sessionId, 'title': title},
-    ));
+    ),);
 
     Future.delayed(const Duration(seconds: 5), () {
       if (!completer.isCompleted) {
@@ -504,7 +504,7 @@ class SessionSyncService {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.workspaceListRequest,
       data: {'requestId': requestId},
-    ));
+    ),);
   }
 
   /// Switch the desktop to a different workspace.
@@ -517,7 +517,7 @@ class SessionSyncService {
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.workspaceSwitchRequest,
       data: {'requestId': requestId, 'workspacePath': workspacePath},
-    ));
+    ),);
 
     Future.delayed(const Duration(seconds: 10), () {
       if (!completer.isCompleted) {
@@ -588,7 +588,7 @@ class SessionSyncService {
           toolCallId: tcMap['id'] as String? ?? '',
           toolName: tcMap['name'] as String? ?? '',
           inputSummary: _summarizeToolInput(
-              tcMap['name'] as String?, tcMap['input']),
+              tcMap['name'] as String?, tcMap['input'],),
           status: ToolCallStatus.done,
         );
       }).toList();

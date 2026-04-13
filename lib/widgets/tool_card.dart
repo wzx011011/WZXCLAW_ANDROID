@@ -4,7 +4,6 @@ import '../config/app_colors.dart';
 import '../models/chat_message.dart';
 
 /// A collapsible card that displays a tool call with input/output details.
-/// Matches the desktop wzxClaw ToolCard component.
 class ToolCard extends StatefulWidget {
   final ChatMessage message;
 
@@ -29,7 +28,6 @@ class _ToolCardState extends State<ToolCard>
     if (widget.message.toolStatus == ToolCallStatus.running) {
       _spinController.repeat();
     }
-    // Auto-expand on error
     if (widget.message.toolStatus == ToolCallStatus.error) {
       _expanded = true;
     }
@@ -42,7 +40,6 @@ class _ToolCardState extends State<ToolCard>
       if (!_spinController.isAnimating) _spinController.repeat();
     } else {
       _spinController.stop();
-      // Auto-expand when error arrives
       if (widget.message.toolStatus == ToolCallStatus.error && !_expanded) {
         setState(() => _expanded = true);
       }
@@ -57,23 +54,23 @@ class _ToolCardState extends State<ToolCard>
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     final msg = widget.message;
     final status = msg.toolStatus ?? ToolCallStatus.running;
-    final hasDetails =
-        (msg.toolInput != null && msg.toolInput!.isNotEmpty) ||
-            (msg.toolOutput != null && msg.toolOutput!.isNotEmpty);
+    final hasInput = msg.toolInput != null && msg.toolInput!.isNotEmpty;
+    final hasOutput = msg.toolOutput != null && msg.toolOutput!.isNotEmpty;
+    final hasDetails = hasInput || hasOutput;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.bgPrimary,
-        border: Border.all(color: AppColors.border),
+        color: colors.bgPrimary,
+        border: Border.all(color: colors.border),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // -- Header (always visible) --
           InkWell(
             onTap: hasDetails ? () => setState(() => _expanded = !_expanded) : null,
             borderRadius: BorderRadius.circular(6),
@@ -81,7 +78,7 @@ class _ToolCardState extends State<ToolCard>
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
-                  _buildIcon(msg.toolName ?? ''),
+                  _buildIcon(colors, msg.toolName ?? ''),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -89,33 +86,36 @@ class _ToolCardState extends State<ToolCard>
                       children: [
                         Text(
                           msg.toolName ?? 'Tool',
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
+                          style: TextStyle(
+                            color: colors.textPrimary,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        if (msg.toolInput != null &&
-                            msg.toolInput!.isNotEmpty)
+                        if (hasInput)
                           Text(
                             msg.toolInput!,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
+                            style: TextStyle(
+                              color: colors.textSecondary,
                               fontSize: 11,
                               fontFamily: 'monospace',
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                        if ((msg.toolName == 'Write' || msg.toolName == 'FileWrite' ||
-                             msg.toolName == 'Edit' || msg.toolName == 'FileEdit') &&
-                            msg.toolOutput != null && msg.toolOutput!.isNotEmpty)
+                        if ((msg.toolName == 'Write' ||
+                                msg.toolName == 'FileWrite' ||
+                                msg.toolName == 'Edit' ||
+                                msg.toolName == 'FileEdit') &&
+                            hasOutput)
                           Text(
-                            msg.toolStatus == ToolCallStatus.done ? '✓ 文件已修改' : '修改中...',
+                            msg.toolStatus == ToolCallStatus.done
+                                ? '✓ 文件已修改'
+                                : '修改中...',
                             style: TextStyle(
                               color: msg.toolStatus == ToolCallStatus.error
-                                  ? AppColors.toolError
-                                  : AppColors.textMuted,
+                                  ? colors.toolError
+                                  : colors.textMuted,
                               fontSize: 10,
                             ),
                           ),
@@ -123,14 +123,14 @@ class _ToolCardState extends State<ToolCard>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _buildStatusBadge(status),
+                  _buildStatusBadge(colors, status),
                   if (hasDetails) ...[
                     const SizedBox(width: 4),
                     Icon(
                       _expanded
                           ? Icons.keyboard_arrow_up
                           : Icons.keyboard_arrow_down,
-                      color: AppColors.textSecondary,
+                      color: colors.textSecondary,
                       size: 18,
                     ),
                   ],
@@ -138,76 +138,105 @@ class _ToolCardState extends State<ToolCard>
               ),
             ),
           ),
-          // -- Expanded details --
+          // Expanded: show input then output
           AnimatedSize(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeInOut,
             child: _expanded && hasDetails
-              ? Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Divider(color: AppColors.border, height: 1),
-                  const SizedBox(height: 6),
-                  if (msg.toolOutput != null && msg.toolOutput!.isNotEmpty) ...[
-                    Row(
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Output',
-                            style: TextStyle(
-                                color: AppColors.textSecondary, fontSize: 10)),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(
-                                ClipboardData(text: msg.toolOutput!));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Copied'),
-                                duration: Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
+                        Divider(color: colors.border, height: 1),
+                        const SizedBox(height: 6),
+                        // Input section
+                        if (hasInput) ...[
+                          Text('Input',
+                              style: TextStyle(
+                                  color: colors.textSecondary, fontSize: 10,),),
+                          const SizedBox(height: 4),
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(maxHeight: 120),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: colors.bgSecondary,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: SingleChildScrollView(
+                              child: Text(
+                                msg.toolInput!,
+                                style: TextStyle(
+                                  color: colors.textPrimary,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  height: 1.4,
+                                ),
                               ),
-                            );
-                          },
-                          child: const Icon(Icons.copy,
-                              size: 14, color: AppColors.textMuted),
-                        ),
+                            ),
+                          ),
+                          if (hasOutput) const SizedBox(height: 8),
+                        ],
+                        // Output section
+                        if (hasOutput) ...[
+                          Row(
+                            children: [
+                              Text('Output',
+                                  style: TextStyle(
+                                      color: colors.textSecondary, fontSize: 10,),),
+                              const Spacer(),
+                              GestureDetector(
+                                onTap: () {
+                                  Clipboard.setData(
+                                      ClipboardData(text: msg.toolOutput!),);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Copied'),
+                                      duration: Duration(seconds: 1),
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                },
+                                child: Icon(Icons.copy,
+                                    size: 14, color: colors.textMuted,),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(maxHeight: 200),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: colors.bgSecondary,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: SingleChildScrollView(
+                              child: Text(
+                                msg.toolOutput!,
+                                style: TextStyle(
+                                  color: colors.textPrimary,
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Container(
-                      width: double.infinity,
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.bgSecondary,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: SingleChildScrollView(
-                        child: Text(
-                          msg.toolOutput!,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                            height: 1.4,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            )
-              : const SizedBox.shrink(),
+                  )
+                : const SizedBox.shrink(),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildIcon(String toolName) {
+  Widget _buildIcon(AppColors colors, String toolName) {
     IconData icon;
     switch (toolName) {
       case 'Bash':
@@ -246,23 +275,23 @@ class _ToolCardState extends State<ToolCard>
       default:
         icon = Icons.build_outlined;
     }
-    return Icon(icon, size: 16, color: AppColors.textSecondary);
+    return Icon(icon, size: 16, color: colors.textSecondary);
   }
 
-  Widget _buildStatusBadge(ToolCallStatus status) {
+  Widget _buildStatusBadge(AppColors colors, ToolCallStatus status) {
     Color color;
     String label;
     switch (status) {
       case ToolCallStatus.running:
-        color = AppColors.toolRunning;
+        color = colors.toolRunning;
         label = 'Running';
         break;
       case ToolCallStatus.done:
-        color = AppColors.toolCompleted;
+        color = colors.toolCompleted;
         label = 'Done';
         break;
       case ToolCallStatus.error:
-        color = AppColors.toolError;
+        color = colors.toolError;
         label = 'Error';
         break;
     }
@@ -289,7 +318,8 @@ class _ToolCardState extends State<ToolCard>
             ),
           const SizedBox(width: 4),
           Text(label,
-              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w500)),
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w500,),),
         ],
       ),
     );
