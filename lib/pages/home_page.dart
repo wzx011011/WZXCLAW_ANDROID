@@ -56,9 +56,12 @@ class _HomePageState extends State<HomePage> {
   // Slash command autocomplete
   List<_SlashCommand> _slashSuggestions = [];
   static const _allSlashCommands = [
-    _SlashCommand('/init', 'Generate WZXCLAW.md'),
-    _SlashCommand('/compact', 'Compress context'),
-    _SlashCommand('/clear', 'New session'),
+    _SlashCommand('/help', '显示帮助'),
+    _SlashCommand('/init', '生成 WZXCLAW.md'),
+    _SlashCommand('/compact', '压缩上下文'),
+    _SlashCommand('/clear', '新建会话'),
+    _SlashCommand('/commit', 'AI辅助Git提交'),
+    _SlashCommand('/review', 'AI代码审查'),
   ];
 
   @override
@@ -705,6 +708,66 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ── Command bottom sheet ──────────────────────────────────────────
+
+  void _showCommandSheet() {
+    final colors = AppColors.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colors.bgElevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  Text('命令', style: TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 15)),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: Icon(Icons.close, color: colors.textMuted, size: 20),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ..._allSlashCommands.map((cmd) => InkWell(
+              onTap: () {
+                Navigator.pop(ctx);
+                _inputController.text = cmd.command;
+                _inputController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: cmd.command.length),
+                );
+                _sendMessage();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Text(
+                      cmd.command,
+                      style: TextStyle(color: colors.accent, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(cmd.description, style: TextStyle(color: colors.textSecondary, fontSize: 13)),
+                    ),
+                  ],
+                ),
+              ),
+            )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── Input bar ──────────────────────────────────────────────────────
 
   Widget _buildInputBar() {
@@ -726,6 +789,22 @@ class _HomePageState extends State<HomePage> {
             top: false,
             child: Row(
               children: [
+                // Command menu button
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    onPressed: isConnected ? _showCommandSheet : null,
+                    icon: Icon(
+                      Icons.add_circle_outline,
+                      color: isConnected ? colors.textSecondary : colors.textMuted,
+                      size: 22,
+                    ),
+                    padding: EdgeInsets.zero,
+                    tooltip: '命令',
+                  ),
+                ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: TextField(
                     controller: _inputController,
