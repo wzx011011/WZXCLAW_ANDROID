@@ -49,7 +49,10 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription? _streamingSub;
   StreamSubscription? _voiceErrorSub;
   StreamSubscription<bool>? _waitingSub;
-  // _connectionStateSub removed — StreamBuilder handles state reactively
+  // Debounced connection state — avoids flicker during brief reconnects.
+  WsConnectionState _visibleConnectionState = WsConnectionState.disconnected;
+  Timer? _reconnectDebounceTimer;
+  StreamSubscription<WsConnectionState>? _connectionStateSub;
   StreamSubscription<String?>? _desktopIdentitySub;
   StreamSubscription<PermissionRequest?>? _permissionSub;
 
@@ -110,6 +113,20 @@ class _HomePageState extends State<HomePage> {
         ConnectionManager.instance.desktopIdentityStream.listen((identity) {
       if (mounted) setState(() => _desktopIdentity = identity);
     });
+
+    // Debounce "reconnecting" state so brief reconnects don't flash the bar.
+    _visibleConnectionState = ConnectionManager.instance.state;
+    _connectionStateSub =
+        ConnectionManager.instance.stateStream.listen((state) {
+      _reconnectDebounceTimer?.cancel();
+      if (state == WsConnectionState.reconnecting) {
+        _reconnectDebounceTimer = Timer(const Duration(milliseconds: 900), () {
+          if (mounted) setState(() => _visibleConnectionState = state);
+        });
+      } else {
+        if (mounted) setState(() => _visibleConnectionState = state);
+      }
+    });
   }
 
   @override
@@ -120,6 +137,8 @@ class _HomePageState extends State<HomePage> {
     _voiceErrorSub?.cancel();
     _desktopIdentitySub?.cancel();
     _permissionSub?.cancel();
+    _connectionStateSub?.cancel();
+    _reconnectDebounceTimer?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -328,17 +347,18 @@ class _HomePageState extends State<HomePage> {
       drawer: const ProjectDrawer(),
       body: Column(
         children: [
-          StreamBuilder<WsConnectionState>(
-            stream: ConnectionManager.instance.stateStream,
-            initialData: ConnectionManager.instance.state,
-            builder: (context, stateSnap) {
-              return StreamBuilder<String?>(
-                stream: ConnectionManager.instance.errorStream,
-                initialData: ConnectionManager.instance.lastError,
-                builder: (context, errorSnap) {
+          StreamBuilder<String?>(
+            stream: ConnectionManager.instance.errorStream,
+            initialData: ConnectionManager.instance.lastError,
+            builder: (context, errorSnap) {
+              return StreamBuilder<bool>(
+                stream: ConnectionManager.instance.desktopOnlineStream,
+                initialData: ConnectionManager.instance.desktopOnline,
+                builder: (context, desktopSnap) {
                   return ConnectionStatusBar(
-                    state: stateSnap.data ?? WsConnectionState.disconnected,
+                    state: _visibleConnectionState,
                     desktopIdentity: _desktopIdentity,
+                    desktopOnline: desktopSnap.data ?? false,
                     errorMessage: errorSnap.data,
                   );
                 },
@@ -559,6 +579,7 @@ class _HomePageState extends State<HomePage> {
     return MarkdownBody(
       data: content,
       selectable: true,
+      extensionSet: md.ExtensionSet.gitHubFlavored,
       styleSheet: MarkdownStyleSheet(
         // Text
         p: TextStyle(color: colors.textPrimary, fontSize: 13, height: 1.5),

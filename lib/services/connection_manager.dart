@@ -53,6 +53,13 @@ class ConnectionManager with WidgetsBindingObserver {
       StreamController<String?>.broadcast();
   Stream<String?> get desktopIdentityStream => _desktopIdentityController.stream;
 
+  // -- Desktop online state (relay reports desktop presence) --
+  bool _desktopOnline = false;
+  bool get desktopOnline => _desktopOnline;
+  final StreamController<bool> _desktopOnlineController =
+      StreamController<bool>.broadcast();
+  Stream<bool> get desktopOnlineStream => _desktopOnlineController.stream;
+
   // -- Internal state --
   WsConnectionState _state = WsConnectionState.disconnected;
   WsConnectionState get state => _state;
@@ -78,6 +85,10 @@ class ConnectionManager with WidgetsBindingObserver {
 
   /// Tracks whether we are expecting a pong (heartbeat sent, awaiting reply).
   bool _waitingForPong = false;
+
+  /// Set to true when the app enters [AppLifecycleState.paused].
+  /// Used to skip the reconnect probe when only [inactive] was triggered.
+  bool _wasPaused = false;
 
   // ============================================================
   // Public API
@@ -156,6 +167,8 @@ class ConnectionManager with WidgetsBindingObserver {
     _waitingForPong = false;
     _desktopIdentity = null;
     _desktopIdentityController.add(null);
+    _desktopOnline = false;
+    _desktopOnlineController.add(false);
 
     if (_channel != null) {
       try {
@@ -195,25 +208,52 @@ class ConnectionManager with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     switch (lifecycleState) {
       case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
-        // Stop heartbeat timers but keep channel alive.
-        // Android will kill the connection in a few seconds anyway.
+        // Full background — heartbeat timers are useless, stop them.
+        _wasPaused = true;
         _stopHeartbeat();
         _stopIdleMonitor();
         break;
 
+      case AppLifecycleState.inactive:
+        // Transient state (notification shade, volume overlay, etc.).
+        // Do NOT interrupt the connection — this fires far too often.
+        break;
+
       case AppLifecycleState.resumed:
-        // Force-close existing connection and reconnect fresh.
-        // Do NOT trust the old connection after resume.
-        if (_url != null && _state != WsConnectionState.disconnected) {
-          _forceReconnect('app resumed');
+        // Only act if the app was truly backgrounded (paused), not just
+        // briefly inactive.  This prevents constant reconnect flicker.
+        if (_wasPaused) {
+          _wasPaused = false;
+          if (_url != null) _resumeCheck();
         }
         break;
 
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
-        // No action needed for these states.
         break;
+    }
+  }
+
+  /// Probe the existing connection on app resume instead of blindly
+  /// force-reconnecting.  If the WS is still alive (pong within 4 s),
+  /// simply restart heartbeat timers.  Only force-reconnect on timeout.
+  void _resumeCheck() {
+    if (_state == WsConnectionState.connected && !_waitingForPong) {
+      _waitingForPong = true;
+      _rawSend(jsonEncode({'event': WsEvents.ping}));
+      _heartbeatTimeoutTimer?.cancel();
+      _heartbeatTimeoutTimer = Timer(const Duration(seconds: 4), () {
+        if (_waitingForPong) {
+          _forceReconnect('resume probe timeout');
+        } else {
+          // Connection survived — restart normal heartbeat/idle timers.
+          _startHeartbeat();
+          _startIdleMonitor();
+        }
+      });
+    } else {
+      // Already disconnected or in intermediate state — reconnect normally.
+      _forceReconnect('app resumed from pause');
     }
   }
 
@@ -247,12 +287,24 @@ class ConnectionManager with WidgetsBindingObserver {
           _desktopIdentity = d;
         }
         _desktopIdentityController.add(_desktopIdentity);
+        // Identity announcement implies desktop is online
+        if (!_desktopOnline) {
+          _desktopOnline = true;
+          _desktopOnlineController.add(true);
+        }
         return;
       }
 
       // System events from relay — don't broadcast to chat
       if (event.startsWith('system:')) {
-        if (event == WsEvents.systemDesktopDisconnected) {
+        if (event == WsEvents.systemDesktopConnected) {
+          if (!_desktopOnline) {
+            _desktopOnline = true;
+            _desktopOnlineController.add(true);
+          }
+        } else if (event == WsEvents.systemDesktopDisconnected) {
+          _desktopOnline = false;
+          _desktopOnlineController.add(false);
           _desktopIdentity = null;
           _desktopIdentityController.add(null);
         }
