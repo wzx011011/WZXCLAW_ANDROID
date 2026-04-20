@@ -6,7 +6,9 @@ import '../models/session_meta.dart';
 import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
 import '../services/session_sync_service.dart';
+import '../services/task_service.dart';
 import 'session_list_tile.dart';
+import 'task_drawer.dart';
 
 /// Drawer widget displaying the current desktop workspace and its sessions.
 class ProjectDrawer extends StatelessWidget {
@@ -28,6 +30,7 @@ class ProjectDrawer extends StatelessWidget {
                 _buildWorkspaceSection(colors),
                 Divider(color: colors.border, height: 1),
                 _buildFileBrowseEntry(context, colors),
+                _buildTaskEntry(context, colors),
                 Divider(color: colors.border, height: 1),
                 _buildSessionSection(context, colors),
               ],
@@ -40,44 +43,59 @@ class ProjectDrawer extends StatelessWidget {
   }
 
   Widget _buildHeader(AppColors colors) {
-    return StreamBuilder<WorkspaceInfo?>(
-      stream: SessionSyncService.instance.workspaceInfoStream,
-      initialData: SessionSyncService.instance.workspaceInfo,
-      builder: (context, snapshot) {
-        final info = snapshot.data;
-        return Container(
-          height: 120,
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          decoration: BoxDecoration(
-            color: colors.bgSecondary,
-            border: Border(
-              bottom: BorderSide(color: colors.accent, width: 3),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '工作区',
-                style: TextStyle(
-                  fontSize: 20,
-                  color: colors.textPrimary,
-                  fontWeight: FontWeight.w500,
+    return StreamBuilder<bool>(
+      stream: ConnectionManager.instance.desktopOnlineStream,
+      initialData: ConnectionManager.instance.desktopOnline,
+      builder: (context, desktopSnap) {
+        final desktopOnline = desktopSnap.data ?? false;
+        return StreamBuilder<WorkspaceInfo?>(
+          stream: SessionSyncService.instance.workspaceInfoStream,
+          initialData: SessionSyncService.instance.workspaceInfo,
+          builder: (context, snapshot) {
+            final info = snapshot.data;
+            String subtitle;
+            if (desktopOnline && info != null) {
+              subtitle = info.workspaceName;
+            } else if (desktopOnline) {
+              subtitle = '加载中...';
+            } else {
+              subtitle = '未连接';
+            }
+            return Container(
+              height: 120,
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: BoxDecoration(
+                color: colors.bgSecondary,
+                border: Border(
+                  bottom: BorderSide(color: colors.accent, width: 3),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                info?.workspaceName ?? '未连接',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: colors.textSecondary,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '工作区',
+                    style: TextStyle(
+                      fontSize: 20,
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: colors.textSecondary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -102,40 +120,59 @@ class ProjectDrawer extends StatelessWidget {
           );
         }
 
-        return StreamBuilder<WorkspaceInfo?>(
-          stream: SessionSyncService.instance.workspaceInfoStream,
-          initialData: SessionSyncService.instance.workspaceInfo,
-          builder: (context, snapshot) {
-            final info = snapshot.data;
+        return StreamBuilder<bool>(
+          stream: ConnectionManager.instance.desktopOnlineStream,
+          initialData: ConnectionManager.instance.desktopOnline,
+          builder: (context, desktopSnap) {
+            final desktopOnline = desktopSnap.data ?? false;
 
-            if (info == null) {
+            if (!desktopOnline) {
               return Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '等待桌面端推送工作区信息...',
+                  '已连接中继，等待桌面端上线...',
                   style: TextStyle(color: colors.textMuted, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
               );
             }
 
-            return ListTile(
-              leading: Icon(Icons.folder_open, color: colors.accent, size: 20),
-              title: Text(
-                info.workspaceName,
-                style: TextStyle(color: colors.textPrimary, fontSize: 14),
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Text(
-                info.workspacePath,
-                style: TextStyle(color: colors.textMuted, fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-              trailing: Text(
-                '${info.sessionCount} 会话',
-                style: TextStyle(color: colors.textMuted, fontSize: 12),
-              ),
+            return StreamBuilder<WorkspaceInfo?>(
+              stream: SessionSyncService.instance.workspaceInfoStream,
+              initialData: SessionSyncService.instance.workspaceInfo,
+              builder: (context, snapshot) {
+                final info = snapshot.data;
+
+                if (info == null) {
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      '等待桌面端推送工作区信息...',
+                      style: TextStyle(color: colors.textMuted, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+
+                return ListTile(
+                  leading: Icon(Icons.folder_open, color: colors.accent, size: 20),
+                  title: Text(
+                    info.workspaceName,
+                    style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    info.workspacePath,
+                    style: TextStyle(color: colors.textMuted, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                  trailing: Text(
+                    '${info.sessionCount} 会话',
+                    style: TextStyle(color: colors.textMuted, fontSize: 12),
+                  ),
+                );
+              },
             );
           },
         );
@@ -154,6 +191,54 @@ class ProjectDrawer extends StatelessWidget {
       onTap: () {
         Navigator.pop(context);
         Navigator.pushNamed(context, '/files');
+      },
+    );
+  }
+
+  Widget _buildTaskEntry(BuildContext context, AppColors colors) {
+    return StreamBuilder<String?>(
+      stream: TaskService.instance.activeTaskIdStream,
+      initialData: TaskService.instance.activeTaskId,
+      builder: (context, snapshot) {
+        final hasActive = snapshot.data != null;
+        return ListTile(
+          leading: Icon(
+            Icons.task_alt,
+            color: hasActive ? colors.accent : colors.textSecondary,
+            size: 20,
+          ),
+          title: Text(
+            '任务',
+            style: TextStyle(color: colors.textSecondary, fontSize: 14),
+          ),
+          trailing: hasActive
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: colors.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '已选',
+                    style: TextStyle(
+                      color: colors.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              : null,
+          dense: true,
+          onTap: () {
+            // Capture the Navigator widget's context (above the route) so it
+            // remains valid after pop removes this widget from the tree.
+            final navigator = Navigator.of(context);
+            Navigator.pop(context);
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              showTaskDrawer(navigator.context);
+            });
+          },
+        );
       },
     );
   }

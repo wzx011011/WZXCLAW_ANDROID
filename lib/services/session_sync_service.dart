@@ -74,6 +74,8 @@ class SessionSyncService {
   bool _isLoading = false;
   StreamSubscription<WsMessage>? _wsSubscription;
   StreamSubscription<WsConnectionState>? _stateSub;
+  // ignore: unused_field — holds subscription reference to prevent GC
+  StreamSubscription<bool>? _desktopOnlineSub;
   int _requestCounter = 0;
   final Map<String, Completer<dynamic>> _pendingRequests = {};
 
@@ -87,6 +89,8 @@ class SessionSyncService {
         ConnectionManager.instance.messageStream.listen(_handleWsMessage);
     _stateSub =
         ConnectionManager.instance.stateStream.listen(_handleConnectionState);
+    _desktopOnlineSub =
+        ConnectionManager.instance.desktopOnlineStream.listen(_handleDesktopOnline);
     _loadCachedSessions();
   }
 
@@ -96,6 +100,28 @@ class SessionSyncService {
       // Small delay to let identity exchange happen first
       Future.delayed(const Duration(milliseconds: 800), () {
         if (ConnectionManager.instance.state == WsConnectionState.connected) {
+          fetchSessions();
+        }
+      });
+    } else if (state == WsConnectionState.disconnected) {
+      // Clear workspace info when disconnected from relay
+      _workspaceInfo = null;
+      _workspaceInfoController.add(null);
+    }
+  }
+
+  // -- Desktop online state handler --
+  void _handleDesktopOnline(bool online) {
+    if (!online) {
+      // Desktop disconnected — clear stale workspace info
+      _workspaceInfo = null;
+      _workspaceInfoController.add(null);
+      _sessions = [];
+      _sessionsController.add([]);
+    } else if (online && ConnectionManager.instance.state == WsConnectionState.connected) {
+      // Desktop came online — fetch sessions after a small delay
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (ConnectionManager.instance.desktopOnline) {
           fetchSessions();
         }
       });

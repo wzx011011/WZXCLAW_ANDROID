@@ -5,6 +5,7 @@ import '../models/chat_message.dart';
 import '../models/ws_message.dart';
 import 'chat_database.dart';
 import 'connection_manager.dart';
+import 'task_service.dart';
 
 /// Permission request from the desktop agent.
 class PermissionRequest {
@@ -552,6 +553,8 @@ class ChatStore {
       WsMessage(event: WsEvents.commandSend, data: {
         'content': text,
         if (_currentSessionId != null) 'sessionId': _currentSessionId,
+        if (TaskService.instance.activeTaskId != null)
+          'activeTaskId': TaskService.instance.activeTaskId,
       },),
     );
     _setWaiting(true);
