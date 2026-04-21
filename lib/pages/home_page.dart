@@ -114,17 +114,24 @@ class _HomePageState extends State<HomePage> {
       if (mounted) setState(() => _desktopIdentity = identity);
     });
 
-    // Debounce "reconnecting" state so brief reconnects don't flash the bar.
+    // Debounce all transient (non-connected) states so brief reconnects
+    // don't flash the status bar.  We stay on the last known state until
+    // the new state has been stable for 1.2 s.  Connected is always shown
+    // immediately so the user gets instant positive feedback.
     _visibleConnectionState = ConnectionManager.instance.state;
     _connectionStateSub =
         ConnectionManager.instance.stateStream.listen((state) {
       _reconnectDebounceTimer?.cancel();
-      if (state == WsConnectionState.reconnecting) {
-        _reconnectDebounceTimer = Timer(const Duration(milliseconds: 900), () {
+      if (state == WsConnectionState.connected) {
+        // Show connected immediately — positive feedback, no delay needed.
+        if (mounted) setState(() => _visibleConnectionState = state);
+      } else {
+        // Transient states (connecting / reconnecting / disconnected):
+        // only show if the state persists for 1.2 s.
+        _reconnectDebounceTimer =
+            Timer(const Duration(milliseconds: 1200), () {
           if (mounted) setState(() => _visibleConnectionState = state);
         });
-      } else {
-        if (mounted) setState(() => _visibleConnectionState = state);
       }
     });
   }

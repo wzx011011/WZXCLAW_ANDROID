@@ -324,6 +324,7 @@ void showTaskDrawer(BuildContext context) {
       initialChildSize: 0.6,
       minChildSize: 0.3,
       maxChildSize: 0.9,
+      expand: false,
       builder: (_, __) => const ClipRRect(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
         child: TaskDrawer(),

@@ -290,10 +290,15 @@ class ProjectDrawer extends StatelessWidget {
   }
 
   Widget _buildSessionSection(BuildContext context, AppColors colors) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
+    return StreamBuilder<String?>(
+      stream: TaskService.instance.activeTaskIdStream,
+      initialData: TaskService.instance.activeTaskId,
+      builder: (context, taskSnap) {
+        final hasTask = taskSnap.data != null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Row(
@@ -359,6 +364,15 @@ class ProjectDrawer extends StatelessWidget {
             ],
           ),
         ),
+        if (!hasTask)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Text(
+              '请先选择任务',
+              style: TextStyle(color: colors.textMuted, fontSize: 13),
+            ),
+          )
+        else
         StreamBuilder<List<SessionMeta>>(
           stream: SessionSyncService.instance.sessionsStream,
           initialData: SessionSyncService.instance.sessions,
@@ -396,7 +410,9 @@ class ProjectDrawer extends StatelessWidget {
             );
           },
         ),
-      ],
+          ],
+        );
+      },
     );
   }
 

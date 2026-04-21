@@ -6,6 +6,7 @@ import '../models/session_meta.dart';
 import '../models/ws_message.dart';
 import 'chat_database.dart';
 import 'connection_manager.dart';
+import 'task_service.dart';
 
 /// Workspace info pushed by the desktop when mobile connects.
 class WorkspaceInfo {
@@ -76,6 +77,8 @@ class SessionSyncService {
   StreamSubscription<WsConnectionState>? _stateSub;
   // ignore: unused_field — holds subscription reference to prevent GC
   StreamSubscription<bool>? _desktopOnlineSub;
+  // ignore: unused_field — holds subscription reference to prevent GC
+  StreamSubscription<String?>? _activeTaskSub;
   int _requestCounter = 0;
   final Map<String, Completer<dynamic>> _pendingRequests = {};
 
@@ -91,15 +94,22 @@ class SessionSyncService {
         ConnectionManager.instance.stateStream.listen(_handleConnectionState);
     _desktopOnlineSub =
         ConnectionManager.instance.desktopOnlineStream.listen(_handleDesktopOnline);
+    // Gate session fetching on active task: when task changes, clear old
+    // sessions and re-fetch if we are connected and desktop is online.
+    _activeTaskSub =
+        TaskService.instance.activeTaskIdStream.listen(_handleActiveTaskChanged);
     _loadCachedSessions();
   }
 
   // -- Connection state handler --
   void _handleConnectionState(WsConnectionState state) {
     if (state == WsConnectionState.connected) {
+      // Only fetch sessions when a task is already selected.
+      if (TaskService.instance.activeTaskId == null) return;
       // Small delay to let identity exchange happen first
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (ConnectionManager.instance.state == WsConnectionState.connected) {
+        if (ConnectionManager.instance.state == WsConnectionState.connected &&
+            TaskService.instance.activeTaskId != null) {
           fetchSessions();
         }
       });
@@ -118,10 +128,34 @@ class SessionSyncService {
       _workspaceInfoController.add(null);
       _sessions = [];
       _sessionsController.add([]);
-    } else if (online && ConnectionManager.instance.state == WsConnectionState.connected) {
+    } else if (online &&
+        ConnectionManager.instance.state == WsConnectionState.connected &&
+        TaskService.instance.activeTaskId != null) {
       // Desktop came online — fetch sessions after a small delay
       Future.delayed(const Duration(milliseconds: 800), () {
-        if (ConnectionManager.instance.desktopOnline) {
+        if (ConnectionManager.instance.desktopOnline &&
+            TaskService.instance.activeTaskId != null) {
+          fetchSessions();
+        }
+      });
+    }
+  }
+
+  // -- Active task change handler --
+  void _handleActiveTaskChanged(String? taskId) {
+    // Clear current sessions immediately so stale list is not shown.
+    _sessions = [];
+    _activeSessionId = null;
+    _sessionsController.add([]);
+    _activeSessionController.add(null);
+
+    if (taskId != null &&
+        ConnectionManager.instance.state == WsConnectionState.connected &&
+        ConnectionManager.instance.desktopOnline) {
+      // Task was selected and we are already connected — fetch right away.
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (TaskService.instance.activeTaskId != null &&
+            ConnectionManager.instance.state == WsConnectionState.connected) {
           fetchSessions();
         }
       });
@@ -254,8 +288,10 @@ class SessionSyncService {
     );
     _workspaceInfoController.add(_workspaceInfo);
 
-    // Always fetch sessions when workspace info arrives
-    fetchSessions();
+    // Only auto-fetch sessions when a task is selected.
+    if (TaskService.instance.activeTaskId != null) {
+      fetchSessions();
+    }
   }
 
   void _handleSessionActive(dynamic data) {
