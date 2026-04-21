@@ -44,10 +44,7 @@ class _HomePageState extends State<HomePage> {
   bool _showScrollFab = false;
   bool _scrollPending = false;
   int _previousGroupCount = 0;
-  List<dynamic> _cachedGroups = [];
-  int _cachedMessageCount = 0;
   String? _desktopIdentity;
-  static final _detailsRegex = RegExp(r'<details[\s\S]*?</details>');
   PermissionRequest? _permissionRequest;
   StreamSubscription? _messagesSub;
   StreamSubscription? _streamingSub;
@@ -212,8 +209,6 @@ class _HomePageState extends State<HomePage> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _cachedGroups = [];
-              _cachedMessageCount = 0;
               ChatStore.instance.clearSession();
             },
             child: Text('清空', style: TextStyle(color: colors.error)),
@@ -283,10 +278,7 @@ class _HomePageState extends State<HomePage> {
     _scrollPending = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollPending = false;
-      if (!_scrollController.hasClients) return;
-      if (_isStreaming) {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-      } else {
+      if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 200),
@@ -483,36 +475,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// Group consecutive tool messages into _ToolGroup objects (incremental).
+  /// Group consecutive tool messages into _ToolGroup objects.
   List<dynamic> _groupMessages(List<ChatMessage> messages) {
-    // If messages were cleared or shrunk, rebuild from scratch
-    if (messages.length < _cachedMessageCount || _cachedMessageCount == 0) {
-      _cachedGroups = _buildGroups(messages);
-      _cachedMessageCount = messages.length;
-      return _cachedGroups;
-    }
-    // Incremental: only process new messages
-    for (int i = _cachedMessageCount; i < messages.length; i++) {
-      final msg = messages[i];
-      if (msg.role == MessageRole.tool) {
-        // Try to append to last group if it's a ToolGroup
-        if (_cachedGroups.isNotEmpty && _cachedGroups.last is _ToolGroup) {
-          (_cachedGroups.last as _ToolGroup).messages.add(msg);
-        } else {
-          _cachedGroups.add(_ToolGroup([msg]));
-        }
-      } else {
-        _cachedGroups.add(msg);
-      }
-    }
-    _cachedMessageCount = messages.length;
-    return _cachedGroups;
-  }
-
-  /// Full rebuild of groups from scratch
-  List<dynamic> _buildGroups(List<ChatMessage> messages) {
     final result = <dynamic>[];
     List<ChatMessage>? currentToolGroup;
+
     for (final msg in messages) {
       if (msg.role == MessageRole.tool) {
         currentToolGroup ??= [];
@@ -616,7 +583,7 @@ class _HomePageState extends State<HomePage> {
     final colors = AppColors.of(context);
     // Strip <details>...</details> blocks — tool outputs are shown via ToolCallGroup
     final content =
-        rawContent.replaceAll(_detailsRegex, '').trim();
+        rawContent.replaceAll(RegExp(r'<details[\s\S]*?</details>'), '').trim();
     if (content.isEmpty) return const SizedBox.shrink();
     // During streaming, skip markdown parsing — render plain text to avoid:
     //  - O(n) re-parse on every chunk
@@ -1137,8 +1104,8 @@ class _CodeBlockWidgetState extends State<_CodeBlockWidget> {
 // ── Helper for grouping consecutive tool messages ─────────────────────
 
 class _ToolGroup {
-  List<ChatMessage> messages;
-  _ToolGroup(this.messages);
+  final List<ChatMessage> messages;
+  const _ToolGroup(this.messages);
 }
 
 // ── Slash command model ───────────────────────────────────────────────
