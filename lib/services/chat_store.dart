@@ -36,6 +36,14 @@ class AskUserQuestion {
   });
 }
 
+/// Pending DB write buffered during streaming.
+class _PendingDbWrite {
+  final ChatMessage message;
+  final bool isUpdate;
+  final String? sessionId;
+  _PendingDbWrite(this.message, {this.isUpdate = false, this.sessionId});
+}
+
 class ChatStore {
   static final ChatStore _instance = ChatStore._();
   static ChatStore get instance => _instance;
@@ -77,6 +85,15 @@ class ChatStore {
   String? _lastErrorText;
   DateTime? _lastErrorTime;
   final Map<String, bool> _pendingMessageIds = {}; // messageId tracking for ack
+
+  // -- Streaming performance: notification throttle --
+  Timer? _notifyTimer;
+
+  // -- Streaming performance: StringBuffer for text accumulation --
+  final StringBuffer _streamBuffer = StringBuffer();
+
+  // -- Streaming performance: batch DB writes --
+  final List<_PendingDbWrite> _pendingDbWrites = [];
 
   bool get isStreaming => _isStreaming;
   bool get isWaitingForResponse => _isWaitingForResponse;
@@ -175,6 +192,8 @@ class ChatStore {
     final content = _extractContent(data);
     if (_streamingMessage == null) {
       _setWaiting(false);
+      _streamBuffer.clear();
+      _streamBuffer.write(content);
       _streamingMessage = ChatMessage(
         role: MessageRole.assistant,
         content: content,
@@ -183,8 +202,9 @@ class ChatStore {
       );
       _isStreaming = true;
     } else {
+      _streamBuffer.write(content);
       _streamingMessage = _streamingMessage!.copyWith(
-        content: _streamingMessage!.content + content,
+        content: _streamBuffer.toString(),
       );
     }
     _notifyListeners();
@@ -217,7 +237,11 @@ class ChatStore {
       createdAt: DateTime.now(),
     );
     _messages.add(toolMsg);
-    ChatDatabase.instance.insertMessage(toolMsg);
+    if (_isStreaming) {
+      _pendingDbWrites.add(_PendingDbWrite(toolMsg, sessionId: _currentSessionId));
+    } else {
+      ChatDatabase.instance.insertMessage(toolMsg);
+    }
     _notifyListeners();
   }
 
@@ -241,7 +265,11 @@ class ChatStore {
           toolOutput: truncatedOutput,
           toolResultSummary: summary,
         );
-        ChatDatabase.instance.updateMessage(_messages[i]);
+        if (_isStreaming) {
+          _pendingDbWrites.add(_PendingDbWrite(_messages[i], isUpdate: true));
+        } else {
+          ChatDatabase.instance.updateMessage(_messages[i]);
+        }
         break;
       }
     }
@@ -282,6 +310,7 @@ class ChatStore {
     }
 
     _isStreaming = false;
+    _flushPendingDbWrites();
     _notifyListeners();
   }
 
@@ -307,14 +336,17 @@ class ChatStore {
     _lastErrorTime = now;
 
     if (_streamingMessage != null) {
+      if (errorText.isNotEmpty) {
+        _streamBuffer.write('\n\n⚠ Error: $errorText');
+      }
       final completed = _streamingMessage!.copyWith(
-        content: _streamingMessage!.content +
-            (errorText.isNotEmpty ? '\n\n⚠ Error: $errorText' : ''),
+        content: _streamBuffer.toString(),
         isStreaming: false,
       );
       _messages.add(completed);
       ChatDatabase.instance.insertMessage(completed);
       _streamingMessage = null;
+      _streamBuffer.clear();
     } else {
       // Standalone error — show but don't persist to avoid clutter on restart
       final errorMsg = ChatMessage(
@@ -539,6 +571,7 @@ class ChatStore {
     _currentSessionId = sessionId;
     _messages.clear();
     _streamingMessage = null;
+    _streamBuffer.clear();
 
     if (sessionId != null) {
       _isBrowsingHistory = true;
@@ -603,6 +636,7 @@ class ChatStore {
     _messages.clear();
     _streamingMessage = null;
     _isStreaming = false;
+    _streamBuffer.clear();
     _notifyListeners();
   }
 
@@ -695,7 +729,9 @@ class ChatStore {
       _messages.add(completed);
       ChatDatabase.instance.insertMessage(completed);
       _streamingMessage = null;
+      _streamBuffer.clear();
     }
+    _flushPendingDbWrites();
   }
 
   String _extractContent(dynamic data) {
@@ -742,6 +778,20 @@ class ChatStore {
   }
 
   void _notifyListeners() {
+    if (_isStreaming) {
+      _notifyTimer?.cancel();
+      _notifyTimer = Timer(const Duration(milliseconds: 16), () {
+        _notifyTimer = null;
+        _emitNotifications();
+      });
+    } else {
+      _notifyTimer?.cancel();
+      _notifyTimer = null;
+      _emitNotifications();
+    }
+  }
+
+  void _emitNotifications() {
     if (!_messagesController.isClosed) {
       _messagesController.add(displayMessages);
     }
@@ -750,8 +800,23 @@ class ChatStore {
     }
   }
 
+  void _flushPendingDbWrites() async {
+    if (_pendingDbWrites.isEmpty) return;
+    final writes = List<_PendingDbWrite>.from(_pendingDbWrites);
+    _pendingDbWrites.clear();
+    final db = ChatDatabase.instance;
+    for (final w in writes) {
+      if (w.isUpdate) {
+        await db.updateMessage(w.message);
+      } else {
+        await db.insertMessage(w.message, sessionId: w.sessionId);
+      }
+    }
+  }
+
   void dispose() {
     _wsSubscription?.cancel();
+    _notifyTimer?.cancel();
     _messagesController.close();
     _streamingController.close();
     _permissionController.close();
