@@ -87,7 +87,10 @@ class _SettingsPageState extends State<SettingsPage> {
       MaterialPageRoute(builder: (context) => const _QrScannerPage()),
     );
     if (result != null && result.isNotEmpty && mounted) {
-      if (!result.startsWith('wss://') && !result.startsWith('ws://')) {
+      // Accept wss://, ws:// (direct WebSocket) and https://, http:// (relay URLs)
+      final isWebSocket = result.startsWith('wss://') || result.startsWith('ws://');
+      final isHttp     = result.startsWith('https://') || result.startsWith('http://');
+      if (!isWebSocket && !isHttp) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('请扫描桌面端 wzxClaw 的连接二维码'),
@@ -98,9 +101,20 @@ class _SettingsPageState extends State<SettingsPage> {
       }
       try {
         final uri = Uri.parse(result);
-        _serverUrlController.text =
-            '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}${uri.path}';
-        _tokenController.text = uri.queryParameters['token'] ?? '';
+        // Extract token from QR code URL query params
+        final token = uri.queryParameters['token'] ?? '';
+        // Convert http/https → ws/wss for WebSocket; strip token from URL
+        // (token goes in the separate token field, _connect() re-adds it)
+        final wsScheme = uri.scheme == 'https'
+            ? 'wss'
+            : uri.scheme == 'http'
+                ? 'ws'
+                : uri.scheme;
+        final serverUrl = uri
+            .replace(scheme: wsScheme, queryParameters: {})
+            .toString();
+        _serverUrlController.text = serverUrl;
+        _tokenController.text = token;
         setState(() {});
         _saveValues();
         _connect();
