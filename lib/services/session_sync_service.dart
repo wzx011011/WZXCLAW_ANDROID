@@ -73,6 +73,7 @@ class SessionSyncService {
   String? _activeSessionId;
   WorkspaceInfo? _workspaceInfo;
   bool _isLoading = false;
+  DateTime? _lastSessionFetchTime;
   StreamSubscription<WsMessage>? _wsSubscription;
   StreamSubscription<WsConnectionState>? _stateSub;
   // ignore: unused_field — holds subscription reference to prevent GC
@@ -384,6 +385,14 @@ class SessionSyncService {
     if (ConnectionManager.instance.state != WsConnectionState.connected) {
       return;
     }
+    // Dedup: skip if fetched within last 2 seconds.
+    final now = DateTime.now();
+    if (_lastSessionFetchTime != null &&
+        now.difference(_lastSessionFetchTime!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastSessionFetchTime = now;
+
     _isLoading = true;
     _loadingController.add(true);
     final requestId = _nextRequestId();
@@ -397,7 +406,10 @@ class SessionSyncService {
       if (_isLoading) {
         _isLoading = false;
         _loadingController.add(false);
-        _pendingRequests.remove(requestId);
+        final completer = _pendingRequests.remove(requestId);
+        if (completer != null && !completer.isCompleted) {
+          completer.completeError('Timeout fetching sessions');
+        }
       }
     });
   }

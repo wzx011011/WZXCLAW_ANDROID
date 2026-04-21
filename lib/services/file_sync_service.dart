@@ -62,6 +62,7 @@ class FileSyncService {
   }
 
   StreamSubscription<WsMessage>? _wsSubscription;
+  StreamSubscription<WsConnectionState>? _connectionStateSub;
   int _requestCounter = 0;
   final Map<String, Completer<dynamic>> _pendingRequests = {};
 
@@ -73,6 +74,14 @@ class FileSyncService {
   void _init() {
     _wsSubscription =
         ConnectionManager.instance.messageStream.listen(_handleWsMessage);
+    // Clear stale tree data on disconnect.
+    _connectionStateSub =
+        ConnectionManager.instance.stateStream.listen((state) {
+      if (state == WsConnectionState.disconnected) {
+        _tree = [];
+        if (!_treeController.isClosed) _treeController.add([]);
+      }
+    });
   }
 
   void _handleWsMessage(WsMessage msg) {
@@ -200,6 +209,7 @@ class FileSyncService {
 
   void dispose() {
     _wsSubscription?.cancel();
+    _connectionStateSub?.cancel();
     _treeController.close();
   }
 }

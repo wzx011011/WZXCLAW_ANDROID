@@ -31,13 +31,41 @@ const server = http.createServer((req, res) => {
 });
 
 // -- WebSocket server --
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  maxPayload: 1024 * 1024, // 1 MB limit
+  perMessageDeflate: {
+    zlibDeflateOptions: { level: 3 },
+    threshold: 1024, // only compress messages > 1 KB
+    clientNoContextTakeover: false,
+    serverNoContextTakeover: false,
+  },
+});
 
 wss.on('connection', (ws, req) => {
-  // Parse query params from the upgrade request URL.
+  // Extract token from Sec-WebSocket-Protocol header, fall back to query string.
   const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const token = reqUrl.searchParams.get('token') || '';
+  let token = '';
+  const protoHeader = req.headers['sec-websocket-protocol'] ?? '';
+  if (protoHeader) {
+    const parts = protoHeader.split(',').map(s => s.trim());
+    for (const part of parts) {
+      if (part.startsWith('wzxclaw-')) {
+        token = part.slice('wzxclaw-'.length);
+        break;
+      }
+    }
+  }
+  if (!token) {
+    token = reqUrl.searchParams.get('token') || '';
+  }
   const role = reqUrl.searchParams.get('role') || 'mobile';
+
+  // Validate role parameter.
+  if (role !== 'desktop' && role !== 'mobile') {
+    ws.close(4003, 'invalid role');
+    return;
+  }
 
   // Authenticate.
   const result = auth.authenticate(token);

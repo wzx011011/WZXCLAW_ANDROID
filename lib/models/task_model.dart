@@ -50,12 +50,15 @@ class TaskModel {
           .whereType<Map<String, dynamic>>()
           .map(TaskProject.fromJson)
           .toList(),
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'] as String)
-          : null,
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.tryParse(json['updatedAt'] as String)
-          : null,
+      createdAt: _parseDateTime(json['createdAt']),
+      updatedAt: _parseDateTime(json['updatedAt']),
     );
+  }
+
+  /// Desktop sends timestamps as numbers (Date.now()); parse int, double, and string.
+  static DateTime? _parseDateTime(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    return DateTime.tryParse(value.toString());
   }
 }

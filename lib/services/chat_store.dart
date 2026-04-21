@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import '../models/chat_message.dart';
 import '../models/ws_message.dart';
@@ -75,6 +76,7 @@ class ChatStore {
   bool _isWaitingForResponse = false;
   String? _lastErrorText;
   DateTime? _lastErrorTime;
+  final Map<String, bool> _pendingMessageIds = {}; // messageId tracking for ack
 
   bool get isStreaming => _isStreaming;
   bool get isWaitingForResponse => _isWaitingForResponse;
@@ -157,8 +159,13 @@ class ChatStore {
         case WsEvents.sessionMessages:
           _handleSessionMessages(wsMsg.data);
           break;
+        case WsEvents.commandAck:
+          _handleCommandAck(wsMsg.data);
+          break;
       }
     } catch (e) {
+      // ignore: avoid_print
+      print('[ChatStore] error handling ${wsMsg.event}: $e');
       _notifyListeners();
     }
   }
@@ -476,12 +483,22 @@ class ChatStore {
 
   // ── session:messages ───────────────────────────────────────────────
   void _handleSessionMessages(dynamic data) {
-    if (data is! List) return;
+    // Support both Map (with sessionId + messages) and plain List formats.
+    List<dynamic>? messagesList;
+    if (data is Map) {
+      final sessionId = data['sessionId'] as String?;
+      if (sessionId != null && sessionId != _currentSessionId) return;
+      messagesList = data['messages'] as List<dynamic>?;
+    } else if (data is List) {
+      messagesList = data;
+    }
+    if (messagesList == null) return;
+
     _messages.clear();
     _streamingMessage = null;
     _isStreaming = false;
     ChatDatabase.instance.clearSessionMessages(_currentSessionId ?? '');
-    for (final item in data) {
+    for (final item in messagesList) {
       if (item is! Map) continue;
       final role =
           item['role'] == 'user' ? MessageRole.user : MessageRole.assistant;
@@ -496,6 +513,15 @@ class ChatStore {
       ChatDatabase.instance.insertMessage(msg);
     }
     _notifyListeners();
+  }
+
+  // ── command:ack ────────────────────────────────────────────────────
+  void _handleCommandAck(dynamic data) {
+    if (data is! Map) return;
+    final messageId = data['messageId'] as String?;
+    if (messageId == null) return;
+    // Remove from pending — ack received means desktop got our message.
+    _pendingMessageIds.remove(messageId);
   }
 
   // ── Public API ─────────────────────────────────────────────────────
@@ -539,9 +565,9 @@ class ChatStore {
     // If browsing history, switch back to live mode
     if (_isBrowsingHistory) {
       _isBrowsingHistory = false;
-      // Don't clear messages — they'll be updated by streaming events
     }
 
+    final messageId = '${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(1000000)}';
     final msg = ChatMessage(
       role: MessageRole.user,
       content: text,
@@ -549,13 +575,16 @@ class ChatStore {
     );
     _messages.add(msg);
     await ChatDatabase.instance.insertMessage(msg, sessionId: _currentSessionId);
+    _pendingMessageIds[messageId] = true;
     ConnectionManager.instance.send(
       WsMessage(event: WsEvents.commandSend, data: {
         'content': text,
+        'messageId': messageId,
         if (_currentSessionId != null) 'sessionId': _currentSessionId,
         if (TaskService.instance.activeTaskId != null)
           'activeTaskId': TaskService.instance.activeTaskId,
       },),
+      priority: 10,
     );
     _setWaiting(true);
     _notifyListeners();

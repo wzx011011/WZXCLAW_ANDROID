@@ -68,6 +68,33 @@ function waitForClose(ws, timeout = 3000) {
   });
 }
 
+/**
+ * Helper: wait for a non-system application message on a WebSocket.
+ * Skips system:* events (system:desktop_connected, etc.).
+ * @param {WebSocket} ws
+ * @param {number} timeout
+ * @returns {Promise<object>}
+ */
+function waitForAppMessage(ws, timeout = 3000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('App message timeout')), timeout);
+    const handler = (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        if (msg.event && msg.event.startsWith('system:')) return; // skip system messages
+        clearTimeout(timer);
+        ws.removeListener('message', handler);
+        resolve(msg);
+      } catch (e) {
+        clearTimeout(timer);
+        ws.removeListener('message', handler);
+        reject(e);
+      }
+    };
+    ws.on('message', handler);
+  });
+}
+
 describe('Relay Integration Tests', () => {
   let serverModule;
 
@@ -120,13 +147,13 @@ describe('Relay Integration Tests', () => {
 
     // Desktop sends connected event -> mobile receives it.
     desktop.send(JSON.stringify({ event: 'connected', data: { status: 'ok' } }));
-    const msg1 = await waitForMessage(mobile);
+    const msg1 = await waitForAppMessage(mobile);
     assert.equal(msg1.event, 'connected');
     assert.deepEqual(msg1.data, { status: 'ok' });
 
     // Mobile sends command -> desktop receives it.
     mobile.send(JSON.stringify({ event: 'command:send', data: { content: 'hello' } }));
-    const msg2 = await waitForMessage(desktop);
+    const msg2 = await waitForAppMessage(desktop);
     assert.equal(msg2.event, 'command:send');
     assert.deepEqual(msg2.data, { content: 'hello' });
 
@@ -139,20 +166,25 @@ describe('Relay Integration Tests', () => {
     const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
     const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
 
+    // Drain system messages first.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Attach listeners AFTER draining system messages.
+    const received = [];
+    mobile.on('message', (data) => received.push(data.toString()));
+    desktop.on('message', (data) => received.push(data.toString()));
+
     // Desktop sends ping.
     desktop.send(JSON.stringify({ event: 'ping' }));
 
     // Mobile sends pong.
     mobile.send(JSON.stringify({ event: 'pong' }));
 
-    // Wait briefly to ensure no messages arrive.
-    const received = [];
-    mobile.on('message', (data) => received.push(data.toString()));
-    desktop.on('message', (data) => received.push(data.toString()));
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    assert.equal(received.length, 0, 'No messages should have been forwarded');
+    // Filter out system messages for the assertion.
+    const nonSystem = received.filter(r => !r.includes('"system:'));
+    assert.equal(nonSystem.length, 0, 'No non-system messages should have been forwarded');
 
     desktop.close();
     mobile.close();
@@ -161,6 +193,9 @@ describe('Relay Integration Tests', () => {
   it('ignores non-JSON messages without crashing', async () => {
     const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
     const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Drain system messages.
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Send non-JSON.
     desktop.send('this is not json');
@@ -175,7 +210,7 @@ describe('Relay Integration Tests', () => {
 
     // Server should still be functional: send a valid message.
     desktop.send(JSON.stringify({ event: 'connected', data: {} }));
-    const msg = await waitForMessage(mobile);
+    const msg = await waitForAppMessage(mobile);
     assert.equal(msg.event, 'connected');
 
     desktop.close();
@@ -185,6 +220,9 @@ describe('Relay Integration Tests', () => {
   it('notifies mobile with system:desktop_disconnected when desktop closes', async () => {
     const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
     const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Drain system messages from connection.
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Close desktop.
     desktop.close();
@@ -199,6 +237,9 @@ describe('Relay Integration Tests', () => {
   it('notifies desktop with system:mobile_disconnected when mobile closes', async () => {
     const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
     const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+
+    // Drain system messages from connection.
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Close mobile.
     mobile.close();
@@ -223,7 +264,7 @@ describe('Relay Integration Tests', () => {
 
     // Second desktop should be able to send messages to mobile.
     desktop2.send(JSON.stringify({ event: 'connected', data: { replaced: true } }));
-    const msg = await waitForMessage(mobile);
+    const msg = await waitForAppMessage(mobile);
     assert.equal(msg.event, 'connected');
     assert.deepEqual(msg.data, { replaced: true });
 
@@ -240,10 +281,17 @@ describe('Relay Integration Tests', () => {
 
     // Desktop sends message -> client (default mobile) receives it.
     desktop.send(JSON.stringify({ event: 'connected', data: {} }));
-    const msg = await waitForMessage(client);
+    const msg = await waitForAppMessage(client);
     assert.equal(msg.event, 'connected');
 
     desktop.close();
     client.close();
+  });
+
+  it('rejects invalid role with code 4003', async () => {
+    const client = await connectClient(`?token=${TEST_TOKEN}&role=hacker`);
+    const { code, reason } = await waitForClose(client);
+    assert.equal(code, 4003);
+    assert.match(reason, /invalid role/);
   });
 });

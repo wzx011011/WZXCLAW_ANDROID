@@ -76,6 +76,7 @@ class WsEvents {
   static const String messageUser = 'message:user';
   static const String messageAssistant = 'message:assistant';
   static const String sessionMessages = 'session:messages';
+  static const String commandAck = 'command:ack';
 
   // -- Permission response (outgoing) --
   static const String permissionResponse = 'permission:response';

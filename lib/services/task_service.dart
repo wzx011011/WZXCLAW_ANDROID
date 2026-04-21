@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/task_model.dart';
 import '../models/ws_message.dart';
 import 'connection_manager.dart';
@@ -33,7 +35,10 @@ class TaskService {
   List<TaskModel> get tasks => List.unmodifiable(_tasks);
 
   StreamSubscription<WsMessage>? _wsSub;
+  StreamSubscription<bool>? _desktopOnlineSub;
   final _random = Random.secure();
+  DateTime? _lastTaskFetchTime;
+  static const _activeTaskKey = 'active_task_id';
 
   /// Generate a unique request ID to correlate WS responses.
   String _newRequestId() =>
@@ -46,6 +51,30 @@ class TaskService {
       onError: (Object err, StackTrace st) {},
       cancelOnError: false,
     );
+
+    // Auto-fetch tasks when desktop comes online.
+    _desktopOnlineSub =
+        ConnectionManager.instance.desktopOnlineStream.listen((online) {
+      if (online) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (ConnectionManager.instance.desktopOnline) {
+            requestTaskList();
+          }
+        });
+      }
+    });
+
+    // Restore persisted active task ID.
+    SharedPreferences.getInstance().then((prefs) {
+      final saved = prefs.getString(_activeTaskKey);
+      if (saved != null && _activeTaskId == null) {
+        _activeTaskId = saved;
+        _activeTaskIdController.add(saved);
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[TaskService] failed to restore active task ID: $e');
+    });
   }
 
   void _onMessage(WsMessage msg) {
@@ -77,6 +106,14 @@ class TaskService {
 
   /// Request the full task list from desktop.
   void requestTaskList() {
+    // Debounce: skip if fetched within last 2 seconds.
+    final now = DateTime.now();
+    if (_lastTaskFetchTime != null &&
+        now.difference(_lastTaskFetchTime!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastTaskFetchTime = now;
+
     if (!_loadingController.isClosed) _loadingController.add(true);
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.taskListRequest,
@@ -84,10 +121,20 @@ class TaskService {
     ),);
   }
 
-  /// Set the active task (local state only, also notifies desktop via command).
+  /// Set the active task (persists to local storage and notifies desktop).
   void setActiveTask(String? taskId) {
     _activeTaskId = taskId;
     _activeTaskIdController.add(_activeTaskId);
+    SharedPreferences.getInstance().then((prefs) {
+      if (taskId != null) {
+        prefs.setString(_activeTaskKey, taskId);
+      } else {
+        prefs.remove(_activeTaskKey);
+      }
+    }).catchError((e) {
+      // ignore: avoid_print
+      print('[TaskService] failed to persist active task ID: $e');
+    });
   }
 
   /// Create a new task with the given title.
@@ -126,6 +173,7 @@ class TaskService {
 
   void dispose() {
     _wsSub?.cancel();
+    _desktopOnlineSub?.cancel();
     _tasksController.close();
     _loadingController.close();
     _activeTaskIdController.close();

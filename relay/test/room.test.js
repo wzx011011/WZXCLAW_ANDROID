@@ -54,6 +54,30 @@ function createMockWs() {
   return { ws, sent, closed };
 }
 
+/** Filter out system:* messages from the sent array (they are tested separately). */
+function nonSystemMessages(sent) {
+  return sent.filter(raw => {
+    try {
+      const msg = JSON.parse(raw);
+      return !msg.event || !msg.event.startsWith('system:');
+    } catch (_) {
+      return true;
+    }
+  });
+}
+
+/** Filter only system:* messages from the sent array. */
+function systemMessages(sent) {
+  return sent.filter(raw => {
+    try {
+      const msg = JSON.parse(raw);
+      return msg.event && msg.event.startsWith('system:');
+    } catch (_) {
+      return false;
+    }
+  });
+}
+
 describe('RoomManager', () => {
   let roomManager;
 
@@ -100,9 +124,11 @@ describe('RoomManager', () => {
     // Simulate desktop disconnect.
     desktop._disconnect();
 
-    assert.equal(mobileSent.length, 1);
-    const msg = JSON.parse(mobileSent[0]);
-    assert.equal(msg.event, 'system:desktop_disconnected');
+    const sysMessages = systemMessages(mobileSent);
+    // system:desktop_connected on join + system:desktop_disconnected on disconnect
+    assert.ok(sysMessages.length >= 2);
+    const lastSys = JSON.parse(sysMessages[sysMessages.length - 1]);
+    assert.equal(lastSys.event, 'system:desktop_disconnected');
   });
 
   it('disconnecting mobile sends system:mobile_disconnected to desktop', () => {
@@ -114,9 +140,11 @@ describe('RoomManager', () => {
     // Simulate mobile disconnect.
     mobile._disconnect();
 
-    assert.equal(desktopSent.length, 1);
-    const msg = JSON.parse(desktopSent[0]);
-    assert.equal(msg.event, 'system:mobile_disconnected');
+    const sysMessages = systemMessages(desktopSent);
+    // system:mobile_connected on join + system:mobile_disconnected on disconnect
+    assert.ok(sysMessages.length >= 2);
+    const lastSys = JSON.parse(sysMessages[sysMessages.length - 1]);
+    assert.equal(lastSys.event, 'system:mobile_disconnected');
   });
 
   it('getRoomCount() reflects active rooms', () => {
@@ -155,8 +183,9 @@ describe('RoomManager', () => {
 
     desktop._receive(JSON.stringify({ event: 'connected', data: { status: 'ok' } }));
 
-    assert.equal(mobileSent.length, 1);
-    const msg = JSON.parse(mobileSent[0]);
+    const forwarded = nonSystemMessages(mobileSent);
+    assert.equal(forwarded.length, 1);
+    const msg = JSON.parse(forwarded[0]);
     assert.equal(msg.event, 'connected');
   });
 
@@ -168,8 +197,9 @@ describe('RoomManager', () => {
 
     mobile._receive(JSON.stringify({ event: 'command:send', data: { content: 'hello' } }));
 
-    assert.equal(desktopSent.length, 1);
-    const msg = JSON.parse(desktopSent[0]);
+    const forwarded = nonSystemMessages(desktopSent);
+    assert.equal(forwarded.length, 1);
+    const msg = JSON.parse(forwarded[0]);
     assert.equal(msg.event, 'command:send');
   });
 
@@ -181,7 +211,7 @@ describe('RoomManager', () => {
 
     desktop._receive(JSON.stringify({ event: 'ping' }));
 
-    assert.equal(mobileSent.length, 0);
+    assert.equal(nonSystemMessages(mobileSent).length, 0);
   });
 
   it('does not forward pong messages', () => {
@@ -192,7 +222,7 @@ describe('RoomManager', () => {
 
     mobile._receive(JSON.stringify({ event: 'pong' }));
 
-    assert.equal(desktopSent.length, 0);
+    assert.equal(nonSystemMessages(desktopSent).length, 0);
   });
 
   it('ignores non-JSON messages', () => {
@@ -204,7 +234,7 @@ describe('RoomManager', () => {
     // Should not throw, should not forward.
     desktop._receive('not-json');
 
-    assert.equal(mobileSent.length, 0);
+    assert.equal(nonSystemMessages(mobileSent).length, 0);
   });
 
   it('closeAll() closes all connections', () => {
@@ -242,9 +272,10 @@ describe('RoomManager', () => {
     const { ws: mobile, sent: mobileSent } = createMockWs();
     roomManager.join('token-1', 'mobile', mobile);
 
-    // Mobile should receive the queued message.
-    assert.ok(mobileSent.length >= 1);
-    const msg = JSON.parse(mobileSent[mobileSent.length - 1]);
+    // Mobile should receive the queued message (plus system:desktop_connected).
+    const forwarded = nonSystemMessages(mobileSent);
+    assert.ok(forwarded.length >= 1);
+    const msg = JSON.parse(forwarded[forwarded.length - 1]);
     assert.equal(msg.event, 'message:assistant');
   });
 
@@ -263,7 +294,7 @@ describe('RoomManager', () => {
     roomManager.join('token-2', 'desktop', desktop2);
     roomManager.join('token-2', 'mobile', mobile2);
     mobile2._receive(JSON.stringify({ event: 'fcm:register', data: { token: 'abc' } }));
-    assert.equal(desktop2Sent.length, 0);
+    assert.equal(nonSystemMessages(desktop2Sent).length, 0);
   });
 
   it('does not forward fcm:register events to desktop', () => {
@@ -274,7 +305,7 @@ describe('RoomManager', () => {
 
     mobile._receive(JSON.stringify({ event: 'fcm:register', data: { token: 'test-token' } }));
 
-    assert.equal(desktopSent.length, 0);
+    assert.equal(nonSystemMessages(desktopSent).length, 0);
   });
 
   it('does not delete room when desktop disconnects but queue has messages', () => {

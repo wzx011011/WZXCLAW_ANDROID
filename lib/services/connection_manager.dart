@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/widgets.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/app_config.dart';
@@ -80,8 +81,9 @@ class ConnectionManager with WidgetsBindingObserver {
   /// Stale stream listeners check this value and bail out if it doesn't match.
   int _connSeq = 0;
 
-  /// Send queue -- holds JSON strings of messages queued during disconnection.
-  final List<String> _sendQueue = [];
+  /// Send queue -- holds prioritized messages queued during disconnection.
+  /// Higher priority values are sent first when the queue flushes.
+  final List<_QueueEntry> _sendQueue = [];
 
   /// Tracks whether we are expecting a pong (heartbeat sent, awaiting reply).
   bool _waitingForPong = false;
@@ -111,7 +113,15 @@ class ConnectionManager with WidgetsBindingObserver {
     _setState(WsConnectionState.connecting);
 
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(url));
+      // Extract token from URL for Sec-WebSocket-Protocol header.
+      final uri = Uri.parse(url);
+      final token = uri.queryParameters['token'] ?? '';
+      final protocols = token.isNotEmpty ? ['wzxclaw-$token'] : <String>[];
+
+      _channel = IOWebSocketChannel.connect(
+        uri,
+        protocols: protocols,
+      );
     } catch (e) {
       // Invalid URL or connection failure -- schedule reconnect.
       _setError('连接失败: $e');
@@ -186,17 +196,25 @@ class ConnectionManager with WidgetsBindingObserver {
   ///
   /// If connected and heartbeat is healthy, sends immediately.
   /// Otherwise, queues the message for delivery on reconnect.
-  void send(WsMessage message) {
+  /// [priority] controls send order when flushing (higher = sent first).
+  void send(WsMessage message, {int priority = 0}) {
     final json = message.toJsonString();
 
     if (_state == WsConnectionState.connected && !_waitingForPong) {
       _rawSend(json);
     } else {
       if (_sendQueue.length >= AppConfig.maxQueueSize) {
-        // Discard the oldest message to stay within limit.
-        _sendQueue.removeAt(0);
+        // Evict lowest priority entry (queue is sorted desc, last is lowest).
+        _sendQueue.removeLast();
       }
-      _sendQueue.add(json);
+      // Insert maintaining sort order (descending priority).
+      final entry = _QueueEntry(json, priority);
+      final idx = _sendQueue.indexWhere((e) => e.priority < priority);
+      if (idx == -1) {
+        _sendQueue.add(entry);
+      } else {
+        _sendQueue.insert(idx, entry);
+      }
     }
   }
 
@@ -455,9 +473,11 @@ class ConnectionManager with WidgetsBindingObserver {
   // ============================================================
 
   void _flushQueue() {
+    // Send highest priority first (queue is already sorted descending).
+    _sendQueue.sort((a, b) => b.priority.compareTo(a.priority));
     while (_sendQueue.isNotEmpty) {
-      final json = _sendQueue.removeAt(0);
-      _rawSend(json);
+      final entry = _sendQueue.removeAt(0);
+      _rawSend(entry.json);
     }
   }
 
@@ -504,5 +524,14 @@ class ConnectionManager with WidgetsBindingObserver {
     _stateController.close();
     _messageController.close();
     _errorController.close();
+    _desktopOnlineController.close();
+    _desktopIdentityController.close();
   }
+}
+
+/// Internal send-queue entry with priority support.
+class _QueueEntry {
+  final String json;
+  final int priority;
+  const _QueueEntry(this.json, this.priority);
 }

@@ -1,32 +1,78 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { log, warn } = require('./logger');
 
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const QUEUE_FILE = path.join(DATA_DIR, 'offline-queues.json');
+
 /**
- * Manages rooms keyed by token. Each room holds at most one desktop and one mobile WebSocket.
- * When the mobile is offline, desktop messages are queued and flushed on reconnect.
+ * Manages rooms keyed by token. Each room holds at most one desktop and
+ * multiple mobile WebSockets. When all mobiles are offline, desktop messages
+ * are queued and flushed on reconnect.
  */
 class RoomManager {
   constructor() {
-    // Map<string, { desktop: WebSocket|null, mobile: WebSocket|null, offlineQueue: Array }>
+    // Map<string, { desktop: WebSocket|null, mobiles: Set<WebSocket>, offlineQueue: Array }>
     this._rooms = new Map();
 
     // Periodic cleanup of expired queue entries (24-hour TTL).
     this._cleanupInterval = setInterval(() => this._cleanupExpiredQueues(), 3600_000); // every hour
+
+    // Server-side WebSocket ping to detect dead TCP connections.
+    this._healthCheckInterval = setInterval(() => this._healthCheck(), 30_000); // every 30s
+
+    // Restore persisted offline queues from disk.
+    this._loadQueues();
   }
 
-  /**
-   * Add a WebSocket to a room under the given role.
-   * If role is "desktop" and a desktop already exists, close the old one with code 4002.
-   * If role is "mobile" and there are queued offline messages, flush them.
-   *
-   * @param {string} token - Room token.
-   * @param {string} role - "desktop" or "mobile".
-   * @param {WebSocket} ws - The WebSocket connection.
-   */
+  // ── Queue Persistence ────────────────────────────────────────────
+
+  _loadQueues() {
+    try {
+      if (!fs.existsSync(QUEUE_FILE)) return;
+      const raw = fs.readFileSync(QUEUE_FILE, 'utf8');
+      const data = JSON.parse(raw);
+      if (typeof data !== 'object' || data === null) return;
+      for (const [token, queue] of Object.entries(data)) {
+        if (Array.isArray(queue) && queue.length > 0) {
+          if (!this._rooms.has(token)) {
+            this._rooms.set(token, { desktop: null, mobiles: new Set(), offlineQueue: queue });
+          } else {
+            this._rooms.get(token).offlineQueue = queue;
+          }
+        }
+      }
+      log(`Loaded persisted queues for ${Object.keys(data).length} room(s)`);
+    } catch (err) {
+      warn(`Failed to load persisted queues: ${err.message}`);
+    }
+  }
+
+  _saveQueues() {
+    try {
+      const data = {};
+      for (const [token, room] of this._rooms) {
+        if (room.offlineQueue.length > 0) {
+          data[token] = room.offlineQueue;
+        }
+      }
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      fs.writeFileSync(QUEUE_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      warn(`Failed to persist queues: ${err.message}`);
+    }
+  }
+
+  // ── Join / Leave ─────────────────────────────────────────────────
+
   join(token, role, ws) {
     if (!this._rooms.has(token)) {
-      this._rooms.set(token, { desktop: null, mobile: null, offlineQueue: [] });
+      this._rooms.set(token, { desktop: null, mobiles: new Set(), offlineQueue: [] });
     }
 
     const room = this._rooms.get(token);
@@ -35,39 +81,37 @@ class RoomManager {
       // If a desktop already exists, replace it.
       if (room.desktop) {
         const oldDesktop = room.desktop;
-        // Clear the slot first to prevent _onDisconnect from deleting the room
-        // when the old desktop's close handler fires synchronously.
         room.desktop = null;
         try {
           oldDesktop.close(4002, 'replaced by new connection');
-        } catch (_) {
-          // May already be closed.
-        }
+        } catch (_) {}
         log(`Room [${token}]: existing desktop replaced (code 4002)`);
       }
       room.desktop = ws;
-      // Ensure the room is in the map -- it may have been deleted by the
-      // old desktop's close handler firing synchronously during replacement.
       if (!this._rooms.has(token)) {
         this._rooms.set(token, room);
       }
-      // Notify mobile that desktop is now available.
-      if (room.mobile && room.mobile.readyState === 1) {
-        this._sendSystem(room.mobile, 'system:desktop_connected');
+      // Notify all mobiles that desktop is now available.
+      for (const m of room.mobiles) {
+        this._sendSystem(m, 'system:desktop_connected');
       }
     } else {
-      // mobile
-      room.mobile = ws;
+      // mobile — add to set (supports multiple mobiles).
+      room.mobiles.add(ws);
 
-      // Flush any queued offline messages when mobile reconnects.
+      // Flush any queued offline messages.
       if (room.offlineQueue.length > 0) {
         this._flushOfflineQueue(room);
       }
-      // Notify desktop that mobile is now available.
+      // Notify desktop that a mobile is available.
       if (room.desktop && room.desktop.readyState === 1) {
         this._sendSystem(room.desktop, 'system:mobile_connected');
+        this._sendSystem(ws, 'system:desktop_connected');
       }
     }
+
+    // Assign a unique deviceId for mobile connections.
+    const deviceId = role === 'mobile' ? crypto.randomUUID() : null;
 
     log(`Room [${token}]: ${role} joined (rooms active: ${this._rooms.size})`);
 
@@ -86,12 +130,8 @@ class RoomManager {
     });
   }
 
-  /**
-   * Forward a message from one side to the other.
-   * @param {WebSocket} from - Sender.
-   * @param {WebSocket|null} to - Recipient.
-   * @param {string} data - Raw message data.
-   */
+  // ── Message Routing ───────────────────────────────────────────────
+
   _forward(from, to, data) {
     if (to && to.readyState === 1) {
       try {
@@ -102,18 +142,13 @@ class RoomManager {
     }
   }
 
-  /**
-   * Handle incoming message from a client.
-   * - ping/pong: log and consume (do not forward).
-   * - fcm:register (from mobile): store FCM token, do not forward.
-   * - desktop -> mobile: forward if online, queue if offline, trigger push for task-complete events.
-   * - Everything else: forward to the paired client.
-   *
-   * @param {string} token
-   * @param {string} role - "desktop" or "mobile"
-   * @param {WebSocket} ws
-   * @param {Buffer|string} data
-   */
+  /** Broadcast data to all connected mobiles in a room. */
+  _broadcastToMobiles(room, data) {
+    for (const m of room.mobiles) {
+      this._forward(null, m, data);
+    }
+  }
+
   _onMessage(token, role, ws, data) {
     const raw = typeof data === 'string' ? data : data.toString('utf8');
 
@@ -137,97 +172,90 @@ class RoomManager {
       return;
     }
 
-    // Get the room.
     const room = this._rooms.get(token);
     if (!room) return;
 
     if (role === 'desktop') {
-      const mobileOnline = room.mobile && room.mobile.readyState === 1;
+      const hasMobiles = room.mobiles.size > 0;
 
-      if (mobileOnline) {
-        // Mobile is connected -- forward normally.
-        this._forward(ws, room.mobile, raw);
+      if (hasMobiles) {
+        // Broadcast to all connected mobiles.
+        this._broadcastToMobiles(room, raw);
       } else {
-        // Mobile is offline -- queue the message (max 500).
+        // All mobiles offline — queue the message (max 500).
         room.offlineQueue.push({ raw, timestamp: Date.now() });
         if (room.offlineQueue.length > 500) {
           room.offlineQueue.shift();
         }
         log(`Room [${token}]: message queued (offline queue size: ${room.offlineQueue.length})`);
-
       }
 
-      log(`Room [${token}]: ${role} -> ${mobileOnline ? 'mobile' : 'queued'} event=${event}`);
+      log(`Room [${token}]: ${role} -> ${hasMobiles ? 'mobiles' : 'queued'} event=${event}`);
+      this._saveQueues();
     } else {
       // Mobile -> desktop: forward normally.
-      const target = room.desktop;
-      this._forward(ws, target, raw);
+      this._forward(ws, room.desktop, raw);
       log(`Room [${token}]: ${role} -> desktop event=${event}`);
     }
   }
 
-  /**
-   * Handle client disconnection.
-   * - Remove the client from its room slot.
-   * - Notify the other side with a system message.
-   * - Delete the room if both sides are null and queue is empty.
-   *
-   * @param {string} token
-   * @param {string} role
-   * @param {WebSocket} ws
-   */
+  // ── Disconnect ────────────────────────────────────────────────────
+
   _onDisconnect(token, role, ws) {
     const room = this._rooms.get(token);
     if (!room) return;
 
-    // Clear the slot only if this ws is still the current occupant.
     if (role === 'desktop' && room.desktop === ws) {
       room.desktop = null;
-    } else if (role === 'mobile' && room.mobile === ws) {
-      room.mobile = null;
+      // Clear stale session/workspace messages from offline queue.
+      room.offlineQueue = room.offlineQueue.filter(msg => {
+        try {
+          const parsed = JSON.parse(msg.raw);
+          const evt = parsed.event || '';
+          return !evt.startsWith('session:') && !evt.startsWith('identity:');
+        } catch (_) {
+          return true;
+        }
+      });
+      // Notify all mobiles.
+      for (const m of room.mobiles) {
+        this._sendSystem(m, 'system:desktop_disconnected');
+      }
+    } else if (role === 'mobile') {
+      room.mobiles.delete(ws);
+      // Only notify desktop when the LAST mobile disconnects.
+      if (room.mobiles.size === 0 && room.desktop) {
+        this._sendSystem(room.desktop, 'system:mobile_disconnected');
+      }
     }
 
-    log(`Room [${token}]: ${role} disconnected`);
+    log(`Room [${token}]: ${role} disconnected (mobiles remaining: ${room.mobiles.size})`);
 
-    // Notify the other side.
-    if (role === 'desktop' && room.mobile) {
-      this._sendSystem(room.mobile, 'system:desktop_disconnected');
-    } else if (role === 'mobile' && room.desktop) {
-      this._sendSystem(room.desktop, 'system:mobile_disconnected');
-    }
-
-    // Clean up empty rooms (also when queue is empty and no FCM token stored).
-    if (room.desktop === null && room.mobile === null && room.offlineQueue.length === 0) {
+    // Clean up empty rooms.
+    if (room.desktop === null && room.mobiles.size === 0 && room.offlineQueue.length === 0) {
       this._rooms.delete(token);
       log(`Room [${token}]: room deleted (empty)`);
     }
   }
 
-  /**
-   * Flush all queued offline messages to the mobile client.
-   * @param {{ mobile: WebSocket|null, offlineQueue: Array }} room
-   */
+  // ── Offline Queue ─────────────────────────────────────────────────
+
   _flushOfflineQueue(room) {
-    if (!room.mobile || room.mobile.readyState !== 1) return;
+    if (room.mobiles.size === 0) return;
     if (room.offlineQueue.length === 0) return;
 
-    const count = room.offlineQueue.length;
-    log(`Flushing ${count} offline messages`);
-
-    for (const msg of room.offlineQueue) {
-      try {
-        room.mobile.send(msg.raw);
-      } catch (err) {
-        warn(`Flush error: ${err.message}`);
-      }
-    }
-
+    // Drain atomically.
+    const queue = room.offlineQueue;
     room.offlineQueue = [];
+
+    log(`Flushing ${queue.length} offline messages to ${room.mobiles.size} mobile(s)`);
+
+    for (const msg of queue) {
+      this._broadcastToMobiles(room, msg.raw);
+    }
+    this._saveQueues();
   }
 
-  /**
-   * Periodically clean up expired queue entries (24-hour TTL).
-   */
   _cleanupExpiredQueues() {
     const ttl = 24 * 60 * 60 * 1000; // 24 hours
     const now = Date.now();
@@ -241,11 +269,8 @@ class RoomManager {
     }
   }
 
-  /**
-   * Send a system event to a WebSocket if it is open.
-   * @param {WebSocket} ws
-   * @param {string} event
-   */
+  // ── Helpers ───────────────────────────────────────────────────────
+
   _sendSystem(ws, event) {
     if (ws && ws.readyState === 1) {
       try {
@@ -259,25 +284,38 @@ class RoomManager {
     }
   }
 
-  /**
-   * Return the number of active rooms.
-   * @returns {number}
-   */
   getRoomCount() {
     return this._rooms.size;
   }
 
-  /**
-   * Close all connections and clear all rooms. Used for graceful shutdown.
-   */
+  _healthCheck() {
+    const failures = [];
+    for (const [token, room] of this._rooms) {
+      if (room.desktop && room.desktop.readyState === 1) {
+        try { room.desktop.ping(); } catch (_) { failures.push({ token, role: 'desktop', ws: room.desktop }); }
+      }
+      for (const m of room.mobiles) {
+        if (m.readyState === 1) {
+          try { m.ping(); } catch (_) { failures.push({ token, role: 'mobile', ws: m }); }
+        }
+      }
+    }
+    for (const { token, role, ws } of failures) {
+      warn(`Room [${token}]: ${role} ping failed, triggering disconnect`);
+      this._onDisconnect(token, role, ws);
+    }
+  }
+
   closeAll() {
     clearInterval(this._cleanupInterval);
+    clearInterval(this._healthCheckInterval);
+    this._saveQueues();
     for (const [token, room] of this._rooms) {
       if (room.desktop) {
         try { room.desktop.close(1001, 'server shutdown'); } catch (_) {}
       }
-      if (room.mobile) {
-        try { room.mobile.close(1001, 'server shutdown'); } catch (_) {}
+      for (const m of room.mobiles) {
+        try { m.close(1001, 'server shutdown'); } catch (_) {}
       }
     }
     this._rooms.clear();

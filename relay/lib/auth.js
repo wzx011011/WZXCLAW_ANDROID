@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const { warn } = require('./logger');
 
 let _devModeWarned = false;
@@ -37,8 +38,10 @@ function authenticate(token) {
     return { ok: true, reason: '' };
   }
 
-  // Production: token must match AUTH_TOKEN env var.
-  if (token === process.env.AUTH_TOKEN) {
+  // Production: token must match AUTH_TOKEN env var (timing-safe comparison).
+  const expected = Buffer.from(process.env.AUTH_TOKEN, 'utf8');
+  const provided = Buffer.from(token, 'utf8');
+  if (expected.length === provided.length && crypto.timingSafeEqual(expected, provided)) {
     return { ok: true, reason: '' };
   }
 
