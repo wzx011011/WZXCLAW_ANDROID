@@ -198,7 +198,9 @@ class RoomManager {
   /** Broadcast data to all connected desktops in a room. */
   _broadcastToDesktops(room, data) {
     for (const [, desktop] of room.desktops) {
-      this._forward(null, desktop.ws, data);
+      if (desktop.ws) {
+        this._forward(null, desktop.ws, data);
+      }
     }
   }
 
