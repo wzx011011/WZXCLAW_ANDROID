@@ -672,8 +672,8 @@ class SessionSyncService {
     if (json['usage'] is Map) {
       final u = Map<String, dynamic>.from(json['usage'] as Map);
       usage = TokenUsage(
-        inputTokens: u['inputTokens'] as int? ?? 0,
-        outputTokens: u['outputTokens'] as int? ?? 0,
+        inputTokens: (u['inputTokens'] as num?)?.toInt() ?? 0,
+        outputTokens: (u['outputTokens'] as num?)?.toInt() ?? 0,
       );
     }
 

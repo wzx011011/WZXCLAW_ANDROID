@@ -285,9 +285,12 @@ class ChatStore {
     if (data is Map<String, dynamic>) {
       final usageMap = data['usage'] as Map<String, dynamic>?;
       if (usageMap != null && _messages.isNotEmpty) {
+        // Use toInt() to safely handle both int and double from JSON
+        final inputTokens = (usageMap['inputTokens'] as num?)?.toInt() ?? 0;
+        final outputTokens = (usageMap['outputTokens'] as num?)?.toInt() ?? 0;
         final usage = TokenUsage(
-          inputTokens: usageMap['inputTokens'] as int? ?? 0,
-          outputTokens: usageMap['outputTokens'] as int? ?? 0,
+          inputTokens: inputTokens,
+          outputTokens: outputTokens,
         );
         // Attach usage to the last assistant message
         for (int i = _messages.length - 1; i >= 0; i--) {
