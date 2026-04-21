@@ -8,6 +8,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/app_config.dart';
 import '../models/connection_state.dart';
+import '../models/desktop_info.dart';
 import '../models/ws_message.dart';
 
 /// Singleton WebSocket connection manager for wzxClaw Android.
@@ -47,19 +48,33 @@ class ConnectionManager with WidgetsBindingObserver {
       StreamController<String?>.broadcast();
   Stream<String?> get errorStream => _errorController.stream;
 
-  // -- Desktop identity stream --
-  String? _desktopIdentity;
-  String? get desktopIdentity => _desktopIdentity;
-  final StreamController<String?> _desktopIdentityController =
-      StreamController<String?>.broadcast();
-  Stream<String?> get desktopIdentityStream => _desktopIdentityController.stream;
+  // -- Desktop list (multi-desktop support) --
+  final List<DesktopInfo> _desktops = [];
+  List<DesktopInfo> get desktops => List.unmodifiable(_desktops);
+  final StreamController<List<DesktopInfo>> _desktopsController =
+      StreamController<List<DesktopInfo>>.broadcast();
+  Stream<List<DesktopInfo>> get desktopsStream => _desktopsController.stream;
 
-  // -- Desktop online state (relay reports desktop presence) --
-  bool _desktopOnline = false;
-  bool get desktopOnline => _desktopOnline;
-  final StreamController<bool> _desktopOnlineController =
-      StreamController<bool>.broadcast();
-  Stream<bool> get desktopOnlineStream => _desktopOnlineController.stream;
+  // -- Selected desktop for routing --
+  String? _selectedDesktopId;
+  String? get selectedDesktopId => _selectedDesktopId;
+  final StreamController<String?> _selectedDesktopIdController =
+      StreamController<String?>.broadcast();
+  Stream<String?> get selectedDesktopIdStream => _selectedDesktopIdController.stream;
+
+  // -- Backward-compatible convenience getters --
+  bool get desktopOnline => _desktops.isNotEmpty;
+  Stream<bool> get desktopOnlineStream =>
+      _desktopsController.stream.map((list) => list.isNotEmpty);
+  String? get desktopIdentity {
+    if (_selectedDesktopId != null) {
+      final match = _desktops.where((d) => d.desktopId == _selectedDesktopId);
+      if (match.isNotEmpty) return match.first.displayLabel;
+    }
+    return _desktops.isNotEmpty ? _desktops.first.displayLabel : null;
+  }
+  Stream<String?> get desktopIdentityStream =>
+      _desktopsController.stream.map((_) => desktopIdentity);
 
   // -- Internal state --
   WsConnectionState _state = WsConnectionState.disconnected;
@@ -168,17 +183,14 @@ class ConnectionManager with WidgetsBindingObserver {
   }
 
   /// Clean disconnect.
-  ///
-  /// Cancels all timers, closes the channel, resets reconnect attempt counter,
-  /// and clears the send queue.
   void disconnect() {
     _cancelAllTimers();
     _sendQueue.clear();
     _waitingForPong = false;
-    _desktopIdentity = null;
-    _desktopIdentityController.add(null);
-    _desktopOnline = false;
-    _desktopOnlineController.add(false);
+    _desktops.clear();
+    _desktopsController.add([]);
+    _selectedDesktopId = null;
+    _selectedDesktopIdController.add(null);
 
     if (_channel != null) {
       try {
@@ -216,6 +228,28 @@ class ConnectionManager with WidgetsBindingObserver {
         _sendQueue.insert(idx, entry);
       }
     }
+  }
+
+  /// Select a specific desktop for message routing.
+  /// Pass null to broadcast to all desktops.
+  void selectDesktop(String? desktopId) {
+    if (desktopId == null) {
+      _rawSend(jsonEncode({'event': WsEvents.targetClear}));
+    } else {
+      _rawSend(jsonEncode({
+        'event': WsEvents.targetSelect,
+        'data': {'desktopId': desktopId},
+      }));
+    }
+  }
+
+  void _selectDesktop(String desktopId) {
+    _selectedDesktopId = desktopId;
+    _selectedDesktopIdController.add(desktopId);
+    _rawSend(jsonEncode({
+      'event': WsEvents.targetSelect,
+      'data': {'desktopId': desktopId},
+    }));
   }
 
   // ============================================================
@@ -296,35 +330,82 @@ class ConnectionManager with WidgetsBindingObserver {
         return;
       }
 
-      // Handle desktop identity announcement
+      // Handle desktop identity announcement (forwarded by relay)
       if (event == WsEvents.identityAnnounce) {
+        // The relay already tracks identity; we rely on system:desktop_list
+        // but also update from direct announcements for backward compat.
         final d = json['data'];
         if (d is Map<String, dynamic>) {
-          _desktopIdentity = d['name'] as String? ?? 'wzxClaw';
-        } else if (d is String) {
-          _desktopIdentity = d;
-        }
-        _desktopIdentityController.add(_desktopIdentity);
-        // Identity announcement implies desktop is online
-        if (!_desktopOnline) {
-          _desktopOnline = true;
-          _desktopOnlineController.add(true);
+          final name = d['name'] as String? ?? 'wzxClaw';
+          // Update matching desktop's name if we have one
+          if (_desktops.length == 1) {
+            _desktops[0] = DesktopInfo(
+              desktopId: _desktops[0].desktopId,
+              name: name,
+              platform: _desktops[0].platform,
+              connectedAt: _desktops[0].connectedAt,
+            );
+            _desktopsController.add(List.from(_desktops));
+          }
         }
         return;
       }
 
       // System events from relay — don't broadcast to chat
       if (event.startsWith('system:')) {
-        if (event == WsEvents.systemDesktopConnected) {
-          if (!_desktopOnline) {
-            _desktopOnline = true;
-            _desktopOnlineController.add(true);
+        if (event == WsEvents.systemDesktopList) {
+          // Full desktop list update from relay.
+          final list = (json['data'] as Map<String, dynamic>?)?['desktops'] as List<dynamic>? ?? [];
+          _desktops.clear();
+          for (final item in list) {
+            if (item is Map<String, dynamic>) {
+              _desktops.add(DesktopInfo.fromJson(item));
+            }
+          }
+          _desktopsController.add(List.from(_desktops));
+          // Auto-select if only one desktop and nothing selected.
+          if (_selectedDesktopId == null && _desktops.length == 1) {
+            _selectDesktop(_desktops.first.desktopId);
+          }
+          // Clear selection if selected desktop is gone.
+          if (_selectedDesktopId != null && !_desktops.any((d) => d.desktopId == _selectedDesktopId)) {
+            _selectedDesktopId = null;
+            _selectedDesktopIdController.add(null);
+          }
+        } else if (event == WsEvents.systemDesktopConnected) {
+          // Enriched event with desktopId.
+          final d = json['data'] as Map<String, dynamic>?;
+          final desktopId = d?['desktopId'] as String?;
+          if (desktopId != null && !_desktops.any((e) => e.desktopId == desktopId)) {
+            _desktops.add(DesktopInfo(
+              desktopId: desktopId,
+              name: d?['name'] as String?,
+              platform: d?['platform'] as String?,
+              connectedAt: DateTime.now().millisecondsSinceEpoch,
+            ));
+            _desktopsController.add(List.from(_desktops));
+          }
+          if (_selectedDesktopId == null && _desktops.length == 1) {
+            _selectDesktop(_desktops.first.desktopId);
           }
         } else if (event == WsEvents.systemDesktopDisconnected) {
-          _desktopOnline = false;
-          _desktopOnlineController.add(false);
-          _desktopIdentity = null;
-          _desktopIdentityController.add(null);
+          final d = json['data'] as Map<String, dynamic>?;
+          final desktopId = d?['desktopId'] as String?;
+          if (desktopId != null) {
+            _desktops.removeWhere((e) => e.desktopId == desktopId);
+            _desktopsController.add(List.from(_desktops));
+            if (_selectedDesktopId == desktopId) {
+              _selectedDesktopId = null;
+              _selectedDesktopIdController.add(null);
+            }
+          }
+        } else if (event == WsEvents.systemTargetConfirmed) {
+          final d = json['data'] as Map<String, dynamic>?;
+          final confirmedId = d?['desktopId'] as String?;
+          if (confirmedId != _selectedDesktopId) {
+            _selectedDesktopId = confirmedId;
+            _selectedDesktopIdController.add(confirmedId);
+          }
         }
         return;
       }
@@ -524,8 +605,8 @@ class ConnectionManager with WidgetsBindingObserver {
     _stateController.close();
     _messageController.close();
     _errorController.close();
-    _desktopOnlineController.close();
-    _desktopIdentityController.close();
+    _desktopsController.close();
+    _selectedDesktopIdController.close();
   }
 }
 

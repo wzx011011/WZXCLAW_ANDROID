@@ -166,8 +166,8 @@ describe('Relay Integration Tests', () => {
     const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
     const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
 
-    // Drain system messages first.
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Drain system messages first (more events now with desktop_list/mobile_list).
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Attach listeners AFTER draining system messages.
     const received = [];
@@ -244,30 +244,45 @@ describe('Relay Integration Tests', () => {
     // Close mobile.
     mobile.close();
 
-    // Desktop should receive system notification.
-    const msg = await waitForMessage(desktop);
-    assert.equal(msg.event, 'system:mobile_disconnected');
+    // Desktop should receive mobile_list + mobile_disconnected.
+    const msgs = [];
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, 500);
+      desktop.on('message', (data) => {
+        try { msgs.push(JSON.parse(data.toString())); } catch (_) {}
+        if (msgs.some(m => m.event === 'system:mobile_disconnected')) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    assert.ok(msgs.some(m => m.event === 'system:mobile_disconnected'),
+      `Expected system:mobile_disconnected in ${msgs.map(m => m.event)}`);
 
     desktop.close();
   });
 
-  it('replaces first desktop when second desktop connects with same token', async () => {
+  it('multiple desktops coexist and broadcast to mobiles', async () => {
     const desktop1 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
     const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
 
-    // Connect a second desktop.
+    // Connect a second desktop — both should coexist.
     const desktop2 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
 
-    // First desktop should be closed with code 4002.
-    const closeEvent = await waitForClose(desktop1);
-    assert.equal(closeEvent.code, 4002);
+    // Neither desktop should be closed.
+    assert.equal(desktop1.readyState, WebSocket.OPEN);
+    assert.equal(desktop2.readyState, WebSocket.OPEN);
 
-    // Second desktop should be able to send messages to mobile.
-    desktop2.send(JSON.stringify({ event: 'connected', data: { replaced: true } }));
-    const msg = await waitForAppMessage(mobile);
-    assert.equal(msg.event, 'connected');
-    assert.deepEqual(msg.data, { replaced: true });
+    // Both desktops can send to mobile.
+    desktop1.send(JSON.stringify({ event: 'test:from_d1', data: 'hello' }));
+    const msg1 = await waitForAppMessage(mobile);
+    assert.equal(msg1.event, 'test:from_d1');
 
+    desktop2.send(JSON.stringify({ event: 'test:from_d2', data: 'world' }));
+    const msg2 = await waitForAppMessage(mobile);
+    assert.equal(msg2.event, 'test:from_d2');
+
+    desktop1.close();
     desktop2.close();
     mobile.close();
   });

@@ -104,15 +104,16 @@ describe('RoomManager', () => {
     assert.equal(roomManager.getRoomCount(), 1);
   });
 
-  it('joining a second desktop replaces the first', () => {
-    const { ws: desktop1, closed: closed1 } = createMockWs();
+  it('multiple desktops can coexist in the same room', () => {
+    const { ws: desktop1 } = createMockWs();
     const { ws: desktop2 } = createMockWs();
     roomManager.join('token-1', 'desktop', desktop1);
     roomManager.join('token-1', 'desktop', desktop2);
-    assert.equal(closed1.length, 1);
-    assert.equal(closed1[0].code, 4002);
-    assert.equal(closed1[0].reason, 'replaced by new connection');
+    // Both desktops should be in the room, neither replaced.
     assert.equal(roomManager.getRoomCount(), 1);
+    // desktop1 should NOT have been closed.
+    assert.equal(desktop1.readyState, 1);
+    assert.equal(desktop2.readyState, 1);
   });
 
   it('disconnecting desktop sends system:desktop_disconnected to mobile', () => {
@@ -125,10 +126,9 @@ describe('RoomManager', () => {
     desktop._disconnect();
 
     const sysMessages = systemMessages(mobileSent);
-    // system:desktop_connected on join + system:desktop_disconnected on disconnect
-    assert.ok(sysMessages.length >= 2);
-    const lastSys = JSON.parse(sysMessages[sysMessages.length - 1]);
-    assert.equal(lastSys.event, 'system:desktop_disconnected');
+    // Should contain system:desktop_disconnected (may not be last due to desktop_list)
+    const events = sysMessages.map(raw => { try { return JSON.parse(raw).event; } catch (_) { return ''; } });
+    assert.ok(events.includes('system:desktop_disconnected'), `Expected system:desktop_disconnected in ${events}`);
   });
 
   it('disconnecting mobile sends system:mobile_disconnected to desktop', () => {

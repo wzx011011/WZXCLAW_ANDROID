@@ -148,4 +148,13 @@ class WsEvents {
   static const String taskUpdateResponse = 'task:update:response';
   static const String taskDeleteResponse = 'task:delete:response';
   static const String taskError = 'task:error';
+
+  // -- Multi-desktop system events from relay --
+  static const String systemDesktopList = 'system:desktop_list';
+  static const String systemMobileList = 'system:mobile_list';
+  static const String systemTargetConfirmed = 'system:target:confirmed';
+
+  // -- Target selection commands (mobile -> relay) --
+  static const String targetSelect = 'target:select';
+  static const String targetClear = 'target:clear';
 }

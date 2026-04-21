@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_colors.dart';
 import '../models/chat_message.dart';
 import '../models/connection_state.dart';
+import '../models/desktop_info.dart';
 import '../services/chat_store.dart';
 import '../services/connection_manager.dart';
 import '../services/session_sync_service.dart';
@@ -358,15 +359,25 @@ class _HomePageState extends State<HomePage> {
             stream: ConnectionManager.instance.errorStream,
             initialData: ConnectionManager.instance.lastError,
             builder: (context, errorSnap) {
-              return StreamBuilder<bool>(
-                stream: ConnectionManager.instance.desktopOnlineStream,
-                initialData: ConnectionManager.instance.desktopOnline,
-                builder: (context, desktopSnap) {
-                  return ConnectionStatusBar(
-                    state: _visibleConnectionState,
-                    desktopIdentity: _desktopIdentity,
-                    desktopOnline: desktopSnap.data ?? false,
-                    errorMessage: errorSnap.data,
+              return StreamBuilder<List<DesktopInfo>>(
+                stream: ConnectionManager.instance.desktopsStream,
+                initialData: ConnectionManager.instance.desktops,
+                builder: (context, desktopsSnap) {
+                  return StreamBuilder<String?>(
+                    stream: ConnectionManager.instance.selectedDesktopIdStream,
+                    initialData: ConnectionManager.instance.selectedDesktopId,
+                    builder: (context, selectedSnap) {
+                      final desktops = desktopsSnap.data ?? [];
+                      return ConnectionStatusBar(
+                        state: _visibleConnectionState,
+                        desktops: desktops,
+                        selectedDesktopId: selectedSnap.data,
+                        onDesktopSelect: (id) => ConnectionManager.instance.selectDesktop(id),
+                        desktopIdentity: ConnectionManager.instance.desktopIdentity,
+                        desktopOnline: desktops.isNotEmpty,
+                        errorMessage: errorSnap.data,
+                      );
+                    },
                   );
                 },
               );

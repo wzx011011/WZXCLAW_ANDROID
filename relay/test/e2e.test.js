@@ -295,10 +295,10 @@ describe('E2E: Network Layer Optimizations', () => {
     assert.equal(msg.event, 'test:still_here');
 
     // Close last mobile — desktop SHOULD get mobile_disconnected
-    const systemMsgPromise = waitForMessage(desktop, 2000);
     mobile2.close();
-    const sysMsg = await systemMsgPromise;
-    assert.equal(sysMsg.event, 'system:mobile_disconnected');
+    const sysMsgs = await collectMessages(desktop, 500);
+    const events = sysMsgs.map(m => m.event);
+    assert.ok(events.includes('system:mobile_disconnected'), `Expected mobile_disconnected in ${JSON.stringify(events)}`);
 
     desktop.close();
   });
@@ -319,7 +319,12 @@ describe('E2E: Network Layer Optimizations', () => {
     const raw = fs.readFileSync(QUEUE_FILE, 'utf8');
     const queues = JSON.parse(raw);
     assert.ok(queues[TEST_TOKEN], 'Queue should have entry for test token');
-    assert.ok(queues[TEST_TOKEN].length >= 2, 'Queue should have >= 2 messages');
+    // New format: { _format: 2, desktopQueues: { desktopId: [...] } }
+    const tokenEntry = queues[TEST_TOKEN];
+    assert.equal(tokenEntry._format, 2);
+    const allQueues = Object.values(tokenEntry.desktopQueues);
+    const totalMessages = allQueues.reduce((sum, q) => sum + q.length, 0);
+    assert.ok(totalMessages >= 2, `Queue should have >= 2 messages, got ${totalMessages}`);
 
     desktop.close();
     await delay(200);
@@ -420,46 +425,168 @@ describe('E2E: Network Layer Optimizations', () => {
     mobile.close();
   });
 
-  // ── Test 9: Desktop replacement ─────────────────────────────────
+  // ── Test 9: Multiple desktops coexist ──────────────────────────
 
-  it('replaces existing desktop when new desktop connects with same token', async () => {
+  it('multiple desktops coexist and mobile receives system:desktop_list', async () => {
     const desktop1 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
-    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+    const desktop2 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
 
-    await delay(200);
+    // Set up listener BEFORE connecting mobile (desktop_list sent on join).
+    const mobileMsgs = [];
+    const mobile = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/?token=${TEST_TOKEN}&role=mobile`);
+    mobile.on('message', (d) => {
+      try { mobileMsgs.push(JSON.parse(d.toString())); } catch (_) {}
+    });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Mobile connect timeout')), 3000);
+      mobile.on('open', () => { clearTimeout(timer); resolve(); });
+      mobile.on('error', reject);
+    });
 
-    // New desktop connects — old one should be kicked
-    const desktop2Promise = connectClient(`?token=${TEST_TOKEN}&role=desktop`);
-    const closeEvent = await waitForClose(desktop1, 2000);
-    assert.equal(closeEvent.code, 4002);
+    await delay(300);
 
-    const desktop2 = await desktop2Promise;
-    await delay(200);
+    // Both desktops should be open.
+    assert.equal(desktop1.readyState, WebSocket.OPEN);
+    assert.equal(desktop2.readyState, WebSocket.OPEN);
 
-    // New desktop can send to mobile
-    sendJson(desktop2, { event: 'test:new_desktop', data: 'hello' });
-    const msg = await waitForAppMessage(mobile, 2000);
-    assert.equal(msg.event, 'test:new_desktop');
+    const listEvents = mobileMsgs.filter(m => m.event === 'system:desktop_list');
+    assert.ok(listEvents.length >= 1, 'Should receive system:desktop_list');
 
+    const desktopsList = listEvents[listEvents.length - 1].data.desktops;
+    assert.equal(desktopsList.length, 2, 'Desktop list should have 2 entries');
+
+    desktop1.close();
     desktop2.close();
     mobile.close();
   });
 
-  // ── Test 10: System events ──────────────────────────────────────
+  // ── Test 10: target:select routing ─────────────────────────────
+
+  it('mobile can target a specific desktop with target:select', async () => {
+    const desktop1 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const desktop2 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+
+    // Set up listener BEFORE connecting mobile.
+    const mobileMsgs = [];
+    const mobile = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/?token=${TEST_TOKEN}&role=mobile`);
+    mobile.on('message', (d) => {
+      try { mobileMsgs.push(JSON.parse(d.toString())); } catch (_) {}
+    });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Mobile connect timeout')), 3000);
+      mobile.on('open', () => { clearTimeout(timer); resolve(); });
+      mobile.on('error', reject);
+    });
+
+    await delay(300);
+
+    const listEvent = mobileMsgs.find(m => m.event === 'system:desktop_list');
+    assert.ok(listEvent, 'Should have received system:desktop_list');
+    const desktops = listEvent.data.desktops;
+    assert.equal(desktops.length, 2);
+
+    const targetId = desktops[0].desktopId;
+
+    // Mobile selects first desktop.
+    sendJson(mobile, { event: 'target:select', data: { desktopId: targetId } });
+
+    // Wait for target confirmation.
+    await delay(200);
+    const confirmed = mobileMsgs.find(m => m.event === 'system:target:confirmed');
+    assert.ok(confirmed, 'Should receive target:confirmed');
+    assert.equal(confirmed.data.desktopId, targetId);
+
+    // Now mobile sends a message — only desktop1 should receive it.
+    const d1Msgs = [];
+    const d2Msgs = [];
+    desktop1.on('message', (d) => { try { d1Msgs.push(JSON.parse(d.toString())); } catch (_) {} });
+    desktop2.on('message', (d) => { try { d2Msgs.push(JSON.parse(d.toString())); } catch (_) {} });
+
+    sendJson(mobile, { event: 'test:targeted', data: 'hello targeted' });
+    await delay(200);
+
+    const d1App = d1Msgs.filter(m => m.event === 'test:targeted');
+    const d2App = d2Msgs.filter(m => m.event === 'test:targeted');
+    assert.ok(d1App.length >= 1, 'Target desktop should receive message');
+    assert.equal(d2App.length, 0, 'Non-target desktop should NOT receive message');
+
+    desktop1.close();
+    desktop2.close();
+    mobile.close();
+  });
+
+  // ── Test 11: System events ──────────────────────────────────────
 
   it('sends system:desktop_connected/disconnected to mobiles', async () => {
-    const mobile = await connectClient(`?token=${TEST_TOKEN}&role=mobile`);
+    // Set up listener BEFORE connecting mobile.
+    const mobileMsgs = [];
+    const mobile = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/?token=${TEST_TOKEN}&role=mobile`);
+    mobile.on('message', (d) => {
+      try { mobileMsgs.push(JSON.parse(d.toString())); } catch (_) {}
+    });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Mobile connect timeout')), 3000);
+      mobile.on('open', () => { clearTimeout(timer); resolve(); });
+      mobile.on('error', reject);
+    });
 
     // Desktop connects
     const desktop = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
-    const sysMsg1 = await waitForMessage(mobile, 2000);
-    assert.equal(sysMsg1.event, 'system:desktop_connected');
+    await delay(200);
+
+    // Find desktop_connected in received messages.
+    const connected = mobileMsgs.find(m => m.event === 'system:desktop_connected');
+    assert.ok(connected, 'Should receive system:desktop_connected');
+    assert.ok(connected.data && connected.data.desktopId, 'Should include desktopId');
 
     // Desktop disconnects
     desktop.close();
-    const sysMsg2 = await waitForMessage(mobile, 2000);
-    assert.equal(sysMsg2.event, 'system:desktop_disconnected');
+    await delay(300);
+    const disconnected = mobileMsgs.find(m => m.event === 'system:desktop_disconnected');
+    assert.ok(disconnected, 'Should receive system:desktop_disconnected');
 
+    mobile.close();
+  });
+
+  // ── Test 12: Selected desktop disconnect clears target ─────────
+
+  it('clears mobile target when selected desktop disconnects', async () => {
+    const desktop1 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+    const desktop2 = await connectClient(`?token=${TEST_TOKEN}&role=desktop`);
+
+    // Set up listener BEFORE connecting mobile.
+    const mobileMsgs = [];
+    const mobile = new WebSocket(`ws://127.0.0.1:${TEST_PORT}/?token=${TEST_TOKEN}&role=mobile`);
+    mobile.on('message', (d) => {
+      try { mobileMsgs.push(JSON.parse(d.toString())); } catch (_) {}
+    });
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Mobile connect timeout')), 3000);
+      mobile.on('open', () => { clearTimeout(timer); resolve(); });
+      mobile.on('error', reject);
+    });
+
+    await delay(300);
+
+    const listEvent = mobileMsgs.find(m => m.event === 'system:desktop_list');
+    assert.ok(listEvent);
+    const targetId = listEvent.data.desktops[0].desktopId;
+
+    // Select that desktop.
+    sendJson(mobile, { event: 'target:select', data: { desktopId: targetId } });
+    await delay(200);
+
+    // Disconnect the targeted desktop.
+    desktop1.close();
+
+    // Mobile should receive target:confirmed with null.
+    await delay(300);
+    const confirmNull = mobileMsgs.find(m =>
+      m.event === 'system:target:confirmed' && m.data && m.data.desktopId === null
+    );
+    assert.ok(confirmNull, 'Should receive target:confirmed with null after target disconnect');
+
+    desktop2.close();
     mobile.close();
   });
 });
