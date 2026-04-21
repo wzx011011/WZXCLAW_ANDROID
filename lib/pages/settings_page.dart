@@ -3,7 +3,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_colors.dart';
-import '../main.dart' show themeNotifier;
+import '../main.dart' show themeNotifier, accentNotifier;
 import '../models/connection_state.dart';
 import '../services/connection_manager.dart';
 import '../services/session_sync_service.dart';
@@ -374,6 +374,27 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                 ),
 
+                const SizedBox(height: 16),
+
+                // -- Accent color selector --
+                Text(
+                  '主题颜色',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 14),
+                ),
+                const SizedBox(height: 8),
+                ValueListenableBuilder<String>(
+                  valueListenable: accentNotifier,
+                  builder: (context, currentAccent, _) {
+                    return Row(
+                      children: [
+                        _accentButton('紫色', 'purple', const Color(0xFF7C3AED), currentAccent, colors),
+                        const SizedBox(width: 8),
+                        _accentButton('绿色', 'green', const Color(0xFF10B981), currentAccent, colors),
+                      ],
+                    );
+                  },
+                ),
+
                 const SizedBox(height: 24),
 
                 // -- Workspace info --
@@ -452,6 +473,47 @@ class _SettingsPageState extends State<SettingsPage> {
               fontSize: 13,
               fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _accentButton(String label, String accent, Color color, String current, AppColors colors) {
+    final selected = accent == current;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () async {
+          accentNotifier.value = accent;
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('accent_color', accent);
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.15) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: selected ? Border.all(color: color, width: 1.5) : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: selected ? color : colors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
           ),
         ),
       ),

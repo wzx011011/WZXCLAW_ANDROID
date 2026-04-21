@@ -98,6 +98,54 @@ class AppColors extends ThemeExtension<AppColors> {
     assistantBubble: Color(0xFFE8E8E8),
   );
 
+  // ── Dark Green theme ─────────────────────────────────────────────
+  static const darkGreen = AppColors(
+    bgPrimary: Color(0xFF181818),
+    bgSecondary: Color(0xFF1F1F1F),
+    bgTertiary: Color(0xFF2B2B2B),
+    bgElevated: Color(0xFF323232),
+    bgInput: Color(0xFF141414),
+    textPrimary: Color(0xFFE0E0E0),
+    textSecondary: Color(0xFF808080),
+    textMuted: Color(0xFF5A5A5A),
+    accent: Color(0xFF10B981),
+    accentHover: Color(0xFF059669),
+    border: Color(0xFF2E2E2E),
+    tableBorder: Color(0x26FFFFFF),
+    success: Color(0xFF4ADE80),
+    warning: Color(0xFFFBBF24),
+    error: Color(0xFFF87171),
+    toolRunning: Color(0xFFDCB67A),
+    toolCompleted: Color(0xFF89D185),
+    toolError: Color(0xFFF48771),
+    userBubble: Color(0xFF10B981),
+    assistantBubble: Color(0xFF2B2B2B),
+  );
+
+  // ── Light Green theme ─────────────────────────────────────────────
+  static const lightGreen = AppColors(
+    bgPrimary: Color(0xFFFFFFFF),
+    bgSecondary: Color(0xFFF3F3F3),
+    bgTertiary: Color(0xFFE8E8E8),
+    bgElevated: Color(0xFFFFFFFF),
+    bgInput: Color(0xFFF0F0F0),
+    textPrimary: Color(0xFF1E1E1E),
+    textSecondary: Color(0xFF616161),
+    textMuted: Color(0xFF999999),
+    accent: Color(0xFF059669),
+    accentHover: Color(0xFF047857),
+    border: Color(0xFFD4D4D4),
+    tableBorder: Color(0xFFC0C0C0),
+    success: Color(0xFF22863A),
+    warning: Color(0xFFB08800),
+    error: Color(0xFFCB2431),
+    toolRunning: Color(0xFFD97706),
+    toolCompleted: Color(0xFF16A34A),
+    toolError: Color(0xFFDC2626),
+    userBubble: Color(0xFF059669),
+    assistantBubble: Color(0xFFE8E8E8),
+  );
+
   @override
   AppColors copyWith({
     Color? bgPrimary,

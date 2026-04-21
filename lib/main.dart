@@ -11,6 +11,9 @@ import 'services/session_sync_service.dart';
 /// Global theme mode notifier — allows settings page to switch theme at runtime.
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
 
+/// Global accent color notifier ('green' or 'purple').
+final ValueNotifier<String> accentNotifier = ValueNotifier('green');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Initialize services early so they start listening
@@ -24,6 +27,9 @@ void main() async {
   } else if (saved == 'dark') {
     themeNotifier.value = ThemeMode.dark;
   }
+  // Load persisted accent color
+  final savedAccent = prefs.getString('accent_color') ?? 'green';
+  accentNotifier.value = savedAccent;
   runApp(const WzxClawApp());
 }
 
@@ -64,16 +70,28 @@ class WzxClawApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (context, mode, _) {
-        return MaterialApp(
-          title: 'wzxClaw',
-          theme: _buildTheme(AppColors.light, Brightness.light),
-          darkTheme: _buildTheme(AppColors.dark, Brightness.dark),
-          themeMode: mode,
-          initialRoute: '/',
-          routes: {
-            '/': (context) => const HomePage(),
-            '/settings': (context) => const SettingsPage(),
-            '/files': (context) => const FileBrowserPage(),
+        return ValueListenableBuilder<String>(
+          valueListenable: accentNotifier,
+          builder: (context, accent, _) {
+            final isGreen = accent == 'green';
+            return MaterialApp(
+              title: 'wzxClaw',
+              theme: _buildTheme(
+                isGreen ? AppColors.lightGreen : AppColors.light,
+                Brightness.light,
+              ),
+              darkTheme: _buildTheme(
+                isGreen ? AppColors.darkGreen : AppColors.dark,
+                Brightness.dark,
+              ),
+              themeMode: mode,
+              initialRoute: '/',
+              routes: {
+                '/': (context) => const HomePage(),
+                '/settings': (context) => const SettingsPage(),
+                '/files': (context) => const FileBrowserPage(),
+              },
+            );
           },
         );
       },
