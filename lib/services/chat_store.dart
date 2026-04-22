@@ -258,8 +258,8 @@ class ChatStore {
       final usageMap = data['usage'] as Map<String, dynamic>?;
       if (usageMap != null && _messages.isNotEmpty) {
         final usage = TokenUsage(
-          inputTokens: usageMap['inputTokens'] as int? ?? 0,
-          outputTokens: usageMap['outputTokens'] as int? ?? 0,
+          inputTokens: (usageMap['inputTokens'] as num?)?.toInt() ?? 0,
+          outputTokens: (usageMap['outputTokens'] as num?)?.toInt() ?? 0,
         );
         // Attach usage to the last assistant message
         for (int i = _messages.length - 1; i >= 0; i--) {
