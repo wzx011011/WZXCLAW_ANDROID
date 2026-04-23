@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/widgets.dart';
@@ -126,6 +127,7 @@ class ConnectionManager with WidgetsBindingObserver {
     final seq = ++_connSeq;
 
     _setState(WsConnectionState.connecting);
+    print('[ConnectionManager] connecting to: $url');
 
     try {
       // Extract token from URL for Sec-WebSocket-Protocol header.
@@ -139,6 +141,7 @@ class ConnectionManager with WidgetsBindingObserver {
       );
     } catch (e) {
       // Invalid URL or connection failure -- schedule reconnect.
+      print('[ConnectionManager] connect error: $e');
       _setError('连接失败: $e');
       _scheduleReconnect();
       return;
@@ -168,10 +171,15 @@ class ConnectionManager with WidgetsBindingObserver {
         _startHeartbeat();
         _startIdleMonitor();
         _flushQueue();
-        // Announce mobile identity to desktop
+        // Announce mobile identity to desktop with device details
         _rawSend(jsonEncode({
           'event': WsEvents.identityMobileAnnounce,
-          'data': {'name': 'wzxClaw Android', 'platform': 'android'},
+          'data': {
+            'name': 'wzxClaw Android',
+            'platform': 'android',
+            'osVersion': Platform.operatingSystemVersion,
+            'appVersion': '2.0',
+          },
         }),);
       }
     }).catchError((error) {
@@ -286,27 +294,12 @@ class ConnectionManager with WidgetsBindingObserver {
     }
   }
 
-  /// Probe the existing connection on app resume instead of blindly
-  /// force-reconnecting.  If the WS is still alive (pong within 4 s),
-  /// simply restart heartbeat timers.  Only force-reconnect on timeout.
+  /// Quick-reconnect on app resume.  After backgrounding, the relay server
+  /// likely already dropped us, so skip the probe and reconnect immediately.
+  /// Reset backoff counter so reconnection starts with minimal delay.
   void _resumeCheck() {
-    if (_state == WsConnectionState.connected && !_waitingForPong) {
-      _waitingForPong = true;
-      _rawSend(jsonEncode({'event': WsEvents.ping}));
-      _heartbeatTimeoutTimer?.cancel();
-      _heartbeatTimeoutTimer = Timer(const Duration(seconds: 4), () {
-        if (_waitingForPong) {
-          _forceReconnect('resume probe timeout');
-        } else {
-          // Connection survived — restart normal heartbeat/idle timers.
-          _startHeartbeat();
-          _startIdleMonitor();
-        }
-      });
-    } else {
-      // Already disconnected or in intermediate state — reconnect normally.
-      _forceReconnect('app resumed from pause');
-    }
+    _reconnectAttempt = 0;
+    _forceReconnect('app resumed from pause');
   }
 
   // ============================================================
@@ -356,13 +349,20 @@ class ConnectionManager with WidgetsBindingObserver {
         if (event == WsEvents.systemDesktopList) {
           // Full desktop list update from relay.
           final list = (json['data'] as Map<String, dynamic>?)?['desktops'] as List<dynamic>? ?? [];
-          _desktops.clear();
+          final newDesktops = <DesktopInfo>[];
           for (final item in list) {
             if (item is Map<String, dynamic>) {
-              _desktops.add(DesktopInfo.fromJson(item));
+              newDesktops.add(DesktopInfo.fromJson(item));
             }
           }
-          _desktopsController.add(List.from(_desktops));
+          // Only notify if the list actually changed to avoid flicker.
+          if (_desktops.length != newDesktops.length ||
+              !_desktops.every((d) => newDesktops.any((n) => n.desktopId == d.desktopId))) {
+            _desktops
+              ..clear()
+              ..addAll(newDesktops);
+            _desktopsController.add(List.from(_desktops));
+          }
           // Auto-select if only one desktop and nothing selected.
           if (_selectedDesktopId == null && _desktops.length == 1) {
             _selectDesktop(_desktops.first.desktopId);
@@ -539,6 +539,7 @@ class ConnectionManager with WidgetsBindingObserver {
   }
 
   void _onChannelError(Object error) {
+    print('[ConnectionManager] channel error: $error');
     _stopHeartbeat();
     _stopIdleMonitor();
     _setError('$error');

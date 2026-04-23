@@ -397,41 +397,96 @@ class _SettingsPageState extends State<SettingsPage> {
 
                 const SizedBox(height: 24),
 
-                // -- Workspace info --
-                StreamBuilder<WorkspaceInfo?>(
-                  stream: SessionSyncService.instance.workspaceInfoStream,
-                  initialData: SessionSyncService.instance.workspaceInfo,
-                  builder: (context, snapshot) {
-                    final info = snapshot.data;
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: colors.bgSecondary,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('工作区',
-                              style: TextStyle(
-                                  color: colors.textSecondary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,),),
-                          const SizedBox(height: 8),
-                          Text(
-                            info != null ? info.workspaceName : '未连接',
-                            style: TextStyle(
-                                color: colors.textPrimary, fontSize: 14,),
+                // -- Connected desktop info --
+                StreamBuilder<WsConnectionState>(
+                  stream: ConnectionManager.instance.stateStream,
+                  initialData: ConnectionManager.instance.state,
+                  builder: (context, connSnap) {
+                    final connState = connSnap.data ?? WsConnectionState.disconnected;
+                    return StreamBuilder<String?>(
+                      stream: ConnectionManager.instance.desktopIdentityStream,
+                      initialData: ConnectionManager.instance.desktopIdentity,
+                      builder: (context, identitySnap) {
+                        final identity = identitySnap.data;
+                        final desktops = ConnectionManager.instance.desktops;
+                        final desktop = desktops.isNotEmpty ? desktops.first : null;
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: colors.bgSecondary,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          if (info != null)
-                            Text(
-                              info.workspacePath,
-                              style: TextStyle(
-                                  color: colors.textMuted, fontSize: 12,),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                        ],
-                      ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('桌面端',
+                                  style: TextStyle(
+                                      color: colors.textSecondary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,),),
+                              const SizedBox(height: 8),
+                              if (connState == WsConnectionState.connected && identity != null)
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      desktop?.platform != null
+                                          ? '$identity · ${desktop!.platform}'
+                                          : identity,
+                                      style: TextStyle(color: colors.textPrimary, fontSize: 14),
+                                    ),
+                                  ],
+                                )
+                              else if (connState == WsConnectionState.connected)
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: Colors.orange,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text('已连接中继，等待桌面',
+                                        style: TextStyle(color: colors.textSecondary, fontSize: 14)),
+                                  ],
+                                )
+                              else
+                                Text('未连接',
+                                    style: TextStyle(color: colors.textMuted, fontSize: 14)),
+                              // Show workspace name as subtitle when available
+                              StreamBuilder<WorkspaceInfo?>(
+                                stream: SessionSyncService.instance.workspaceInfoStream,
+                                initialData: SessionSyncService.instance.workspaceInfo,
+                                builder: (context, wsSnap) {
+                                  final wsInfo = wsSnap.data;
+                                  if (wsInfo != null && connState == WsConnectionState.connected) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Text(
+                                        wsInfo.workspaceName,
+                                        style: TextStyle(color: colors.textMuted, fontSize: 12),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

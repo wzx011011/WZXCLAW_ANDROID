@@ -101,6 +101,11 @@ class TaskService {
       case WsEvents.taskError:
         if (!_loadingController.isClosed) _loadingController.add(false);
         break;
+
+      case WsEvents.taskChanged:
+        // Desktop pushed a task change — refresh the list
+        requestTaskList();
+        break;
     }
   }
 
@@ -156,6 +161,18 @@ class TaskService {
         'requestId': _newRequestId(),
         'taskId': taskId,
         'updates': {'archived': true},
+      },
+    ),);
+  }
+
+  /// Rename a task.
+  void renameTask(String taskId, String newTitle) {
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.taskUpdateRequest,
+      data: {
+        'requestId': _newRequestId(),
+        'taskId': taskId,
+        'updates': {'title': newTitle},
       },
     ),);
   }

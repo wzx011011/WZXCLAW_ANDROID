@@ -192,6 +192,11 @@ class _TaskDrawerState extends State<TaskDrawer> {
                   color: colors.bgElevated,
                   itemBuilder: (_) => [
                     PopupMenuItem(
+                      value: 'rename',
+                      child: Text('重命名',
+                          style: TextStyle(color: colors.textSecondary, fontSize: 13),),
+                    ),
+                    PopupMenuItem(
                       value: 'archive',
                       child: Text('归档',
                           style: TextStyle(color: colors.textSecondary, fontSize: 13),),
@@ -203,7 +208,9 @@ class _TaskDrawerState extends State<TaskDrawer> {
                     ),
                   ],
                   onSelected: (value) async {
-                    if (value == 'archive') {
+                    if (value == 'rename') {
+                      _showRenameDialog(context, task);
+                    } else if (value == 'archive') {
                       TaskService.instance.archiveTask(task.id);
                     } else if (value == 'delete') {
                       final confirmed = await showDialog<bool>(
@@ -246,6 +253,13 @@ class _TaskDrawerState extends State<TaskDrawer> {
     showDialog<void>(
       context: context,
       builder: (_) => const _CreateTaskDialog(),
+    );
+  }
+
+  void _showRenameDialog(BuildContext context, TaskModel task) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _RenameTaskDialog(task: task),
     );
   }
 }
@@ -308,6 +322,70 @@ class _CreateTaskDialogState extends State<_CreateTaskDialog> {
             }
           },
           child: Text('创建', style: TextStyle(color: colors.accent)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Rename dialog with pre-filled text field.
+class _RenameTaskDialog extends StatefulWidget {
+  final TaskModel task;
+  const _RenameTaskDialog({required this.task});
+
+  @override
+  State<_RenameTaskDialog> createState() => _RenameTaskDialogState();
+}
+
+class _RenameTaskDialogState extends State<_RenameTaskDialog> {
+  late final _controller = TextEditingController(text: widget.task.title);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return AlertDialog(
+      backgroundColor: colors.bgElevated,
+      title: Text('重命名任务', style: TextStyle(color: colors.textPrimary)),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        style: TextStyle(color: colors.textPrimary),
+        decoration: InputDecoration(
+          hintText: '任务名称',
+          hintStyle: TextStyle(color: colors.textMuted),
+          enabledBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: colors.border),
+          ),
+          focusedBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: colors.accent),
+          ),
+        ),
+        onSubmitted: (value) {
+          if (value.trim().isNotEmpty) {
+            TaskService.instance.renameTask(widget.task.id, value.trim());
+            Navigator.pop(context);
+          }
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('取消', style: TextStyle(color: colors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () {
+            if (_controller.text.trim().isNotEmpty) {
+              TaskService.instance.renameTask(widget.task.id, _controller.text.trim());
+              Navigator.pop(context);
+            }
+          },
+          child: Text('确定', style: TextStyle(color: colors.accent)),
         ),
       ],
     );

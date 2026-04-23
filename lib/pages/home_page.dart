@@ -56,6 +56,7 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription<WsConnectionState>? _connectionStateSub;
   StreamSubscription<String?>? _desktopIdentitySub;
   StreamSubscription<PermissionRequest?>? _permissionSub;
+  final FocusNode _inputFocusNode = FocusNode();
 
   // Slash command autocomplete
   List<_SlashCommand> _slashSuggestions = [];
@@ -63,9 +64,11 @@ class _HomePageState extends State<HomePage> {
     _SlashCommand('/help', '显示帮助'),
     _SlashCommand('/init', '生成 WZXCLAW.md'),
     _SlashCommand('/compact', '压缩上下文'),
+    _SlashCommand('/context', '查看上下文状态'),
     _SlashCommand('/clear', '新建会话'),
     _SlashCommand('/commit', 'AI辅助Git提交'),
     _SlashCommand('/review', 'AI代码审查'),
+    _SlashCommand('/insights', '生成开发洞察报告'),
   ];
 
   @override
@@ -149,6 +152,7 @@ class _HomePageState extends State<HomePage> {
     _reconnectDebounceTimer?.cancel();
     _inputController.dispose();
     _scrollController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
@@ -293,6 +297,9 @@ class _HomePageState extends State<HomePage> {
     final colors = AppColors.of(context);
     return Scaffold(
       backgroundColor: colors.bgPrimary,
+      onDrawerChanged: (opened) {
+        if (opened) _inputFocusNode.unfocus();
+      },
       appBar: AppBar(
         backgroundColor: colors.bgSecondary,
         title: StreamBuilder<String?>(
@@ -334,6 +341,7 @@ class _HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.add_comment_outlined),
                 tooltip: '新对话',
                 onPressed: () {
+                  _inputFocusNode.unfocus();
                   SessionSyncService.instance.setActiveSession(null);
                   ChatStore.instance.switchToSession(null);
                 },
@@ -427,6 +435,7 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           _buildSlashSuggestions(),
+          _buildTodoPanel(),
           _buildInputBar(),
         ],
       ),
@@ -448,7 +457,9 @@ class _HomePageState extends State<HomePage> {
     // Group consecutive tool messages together
     final grouped = _groupMessages(_displayMessages);
     final itemCount = grouped.length + (showThinking ? 1 : 0);
-    final prevCount = _previousGroupCount;
+    // Only animate newly appended messages (not full replacement from session switch).
+    // If prev count was 0 (empty or just switched), skip animation entirely.
+    final prevCount = _previousGroupCount > 0 ? _previousGroupCount : itemCount;
     _previousGroupCount = grouped.length;
 
     return ListView.builder(
@@ -751,6 +762,7 @@ class _HomePageState extends State<HomePage> {
 
   void _showCommandSheet() {
     final colors = AppColors.of(context);
+    _inputFocusNode.unfocus();
     showModalBottomSheet(
       context: context,
       backgroundColor: colors.bgElevated,
@@ -807,6 +819,66 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+
+  // ── Todo panel ──────────────────────────────────────────────────────
+
+  Widget _buildTodoPanel() {
+    final colors = AppColors.of(context);
+    final todos = ChatStore.instance.todos;
+    if (todos.isEmpty) return const SizedBox.shrink();
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 120),
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colors.bgTertiary,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: todos.map((t) {
+            final status = t['status'] ?? 'pending';
+            final content = t['content'] ?? '';
+            final icon = status == 'completed'
+                ? Icons.check_circle
+                : status == 'in_progress'
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked;
+            final color = status == 'completed'
+                ? Colors.green
+                : status == 'in_progress'
+                    ? colors.accent
+                    : colors.textMuted;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      content,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: status == 'completed' ? colors.textMuted : colors.textPrimary,
+                        decoration: status == 'completed' ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   // ── Input bar ──────────────────────────────────────────────────────
 
   Widget _buildInputBar() {
@@ -824,10 +896,72 @@ class _HomePageState extends State<HomePage> {
             color: colors.bgSecondary,
             border: Border(top: BorderSide(color: colors.border, width: 0.5)),
           ),
-          child: SafeArea(
-            top: false,
-            child: Row(
+          child: Row(
               children: [
+                // Permission mode dropdown
+                if (isConnected)
+                  SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      onPressed: () {
+                        const modes = ['always-ask', 'accept-edits', 'plan', 'bypass'];
+                        const labels = ['总是询问', '允许编辑', '规划模式', '自动批准'];
+                        final current = ChatStore.instance.permissionMode;
+                        // Get button position for popup placement
+                        final renderBox = context.findRenderObject() as RenderBox;
+                        final size = MediaQuery.of(context).size;
+                        final position = RelativeRect.fromLTRB(
+                          0,
+                          renderBox.localToGlobal(Offset.zero).dy - 180,
+                          size.width - renderBox.localToGlobal(Offset.zero).dx - renderBox.size.width,
+                          0,
+                        );
+                        showMenu<String>(
+                          context: context,
+                          position: position,
+                          items: List.generate(modes.length, (i) {
+                            final selected = modes[i] == current;
+                            return PopupMenuItem<String>(
+                              value: modes[i],
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 20,
+                                    child: selected
+                                        ? Icon(Icons.check, size: 16, color: colors.accent)
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(labels[i],
+                                      style: TextStyle(
+                                        color: selected ? colors.accent : colors.textPrimary,
+                                        fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                                      )),
+                                ],
+                              ),
+                            );
+                          }),
+                        ).then((value) {
+                          // Prevent keyboard from appearing when popup dismisses
+                          _inputFocusNode.unfocus();
+                          if (value != null) {
+                            ChatStore.instance.setPermissionMode(value);
+                          }
+                        });
+                      },
+                      icon: Icon(
+                        Icons.security_outlined,
+                        color: ChatStore.instance.permissionMode == 'bypass'
+                            ? colors.error
+                            : colors.textSecondary,
+                        size: 20,
+                      ),
+                      padding: EdgeInsets.zero,
+                      tooltip: '权限模式',
+                    ),
+                  ),
+                if (isConnected) const SizedBox(width: 2),
                 // Command menu button
                 SizedBox(
                   width: 36,
@@ -843,10 +977,11 @@ class _HomePageState extends State<HomePage> {
                     tooltip: '命令',
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 2),
                 Expanded(
                   child: TextField(
                     controller: _inputController,
+                    focusNode: _inputFocusNode,
                     enabled: isConnected,
                     style: TextStyle(color: colors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
@@ -864,7 +999,7 @@ class _HomePageState extends State<HomePage> {
                         borderSide: BorderSide.none,
                       ),
                       contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10,),
+                          horizontal: 12, vertical: 8,),
                     ),
                     maxLines: 5,
                     minLines: 1,
@@ -873,7 +1008,7 @@ class _HomePageState extends State<HomePage> {
                     onChanged: _onInputChanged,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 MicButton(
                   onResult: (text) {
                     _inputController.text = text;
@@ -902,7 +1037,6 @@ class _HomePageState extends State<HomePage> {
                   ),
               ],
             ),
-          ),
         );
       },
     );

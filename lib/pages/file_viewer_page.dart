@@ -1,12 +1,20 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/themes/vs2015.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:highlight/highlight.dart' show highlight;
 
 import '../config/app_colors.dart';
 import '../services/file_sync_service.dart';
 
-/// Full-screen code viewer with syntax highlighting.
+/// Full-screen file viewer with type-based dispatch:
+/// - HTML → WebView
+/// - Markdown → rendered markdown
+/// - Images → Image.memory
+/// - Code/Text → syntax highlighting
 class FileViewerPage extends StatefulWidget {
   final String filePath;
   final String fileName;
@@ -38,7 +46,9 @@ class _FileViewerPageState extends State<FileViewerPage> {
       _error = null;
     });
     try {
+      print('[FileViewer] loading: ${widget.filePath}');
       final content = await FileSyncService.instance.readFile(widget.filePath);
+      print('[FileViewer] result: ${content != null ? "got content (${content.size} bytes)" : "null"}');
       if (mounted) {
         setState(() {
           _content = content;
@@ -47,6 +57,7 @@ class _FileViewerPageState extends State<FileViewerPage> {
         });
       }
     } catch (e) {
+      print('[FileViewer] error: $e');
       if (mounted) {
         setState(() {
           _error = e.toString();
@@ -66,6 +77,25 @@ class _FileViewerPageState extends State<FileViewerPage> {
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  bool get _isHtml {
+    final ext = _fileExtension;
+    return ext == 'html' || ext == 'htm';
+  }
+
+  bool get _isMarkdown {
+    return _fileExtension == 'md';
+  }
+
+  bool get _isImage {
+    final ext = _fileExtension;
+    return ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].contains(ext);
+  }
+
+  String get _fileExtension {
+    final parts = widget.fileName.split('.');
+    return parts.length > 1 ? parts.last.toLowerCase() : '';
   }
 
   @override
@@ -91,11 +121,12 @@ class _FileViewerPageState extends State<FileViewerPage> {
         ),
         iconTheme: IconThemeData(color: colors.textPrimary),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.copy),
-            tooltip: '复制全文',
-            onPressed: _copyContent,
-          ),
+          if (!_isHtml)
+            IconButton(
+              icon: const Icon(Icons.copy),
+              tooltip: '复制全文',
+              onPressed: _copyContent,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadFile,
@@ -127,7 +158,79 @@ class _FileViewerPageState extends State<FileViewerPage> {
     }
     if (_content == null) return const SizedBox.shrink();
 
-    // Syntax highlight
+    // Dispatch by file type
+    if (_isHtml) return _buildHtmlView(colors);
+    if (_isMarkdown) return _buildMarkdownView(colors);
+    if (_isImage) return _buildImageView(colors);
+    return _buildCodeView(colors);
+  }
+
+  Widget _buildHtmlView(AppColors colors) {
+    return InAppWebView(
+      initialData: InAppWebViewInitialData(data: _content!.content),
+      initialSettings: InAppWebViewSettings(
+        useHybridComposition: true,
+        transparentBackground: true,
+      ),
+    );
+  }
+
+  Widget _buildMarkdownView(AppColors colors) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: MarkdownBody(
+        data: _content!.content,
+        selectable: true,
+        styleSheet: MarkdownStyleSheet(
+          p: TextStyle(color: colors.textPrimary, fontSize: 14, height: 1.6),
+          h1: TextStyle(color: colors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
+          h2: TextStyle(color: colors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+          h3: TextStyle(color: colors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+          code: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 12,
+            backgroundColor: colors.bgTertiary,
+            color: colors.accent,
+          ),
+          codeblockDecoration: BoxDecoration(
+            color: colors.bgTertiary,
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageView(AppColors colors) {
+    try {
+      final bytes = base64Decode(_content!.content);
+      return Center(
+        child: Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _buildUnsupportedImage(colors),
+        ),
+      );
+    } catch (_) {
+      // If not base64, try treating content as text (SVG path etc.)
+      return _buildUnsupportedImage(colors);
+    }
+  }
+
+  Widget _buildUnsupportedImage(AppColors colors) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.image_not_supported, size: 48, color: colors.textMuted),
+          const SizedBox(height: 8),
+          Text('无法预览此图片格式', style: TextStyle(color: colors.textSecondary)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCodeView(AppColors colors) {
     List<TextSpan> spans;
     try {
       final result = _content!.language.isNotEmpty

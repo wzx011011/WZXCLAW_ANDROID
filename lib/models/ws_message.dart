@@ -58,28 +58,28 @@ class WsEvents {
 
   // -- Incoming: new stream:agent:* format (desktop broadcasts these) --
   static const String agentText = 'stream:agent:text';
+  static const String agentThinking = 'stream:agent:thinking';
   static const String agentToolCall = 'stream:agent:tool_call';
   static const String agentToolResult = 'stream:agent:tool_result';
   static const String agentDone = 'stream:agent:done';
   static const String agentError = 'stream:agent:error';
   static const String agentCompacted = 'stream:agent:compacted';
   static const String agentPermissionRequest = 'stream:agent:permission_request';
+  static const String agentTurnEnd = 'stream:agent:turn_end';
 
-  // -- Incoming: legacy stream:* format (backward compat) --
-  static const String streamTextDelta = 'stream:text_delta';
-  static const String streamToolUseStart = 'stream:tool_use_start';
-  static const String streamDone = 'stream:done';
-  static const String streamError = 'stream:error';
-
-  // -- Incoming: message-level events --
-  static const String connected = 'connected';
-  static const String messageUser = 'message:user';
-  static const String messageAssistant = 'message:assistant';
-  static const String sessionMessages = 'session:messages';
+  // -- Incoming: command acknowledgment --
   static const String commandAck = 'command:ack';
 
   // -- Permission response (outgoing) --
   static const String permissionResponse = 'permission:response';
+
+  // -- Permission mode (bidirectional) --
+  static const String permissionSetModeRequest = 'permission:set_mode:request';
+  static const String permissionGetModeRequest = 'permission:get_mode:request';
+  static const String permissionModeResponse = 'permission:mode:response';
+
+  // -- Todo events (incoming: desktop -> mobile) --
+  static const String todoUpdated = 'todo:updated';
 
   // -- Session sync events (outgoing: mobile -> desktop) --
   static const String sessionListRequest = 'session:list:request';
@@ -148,6 +148,10 @@ class WsEvents {
   static const String taskUpdateResponse = 'task:update:response';
   static const String taskDeleteResponse = 'task:delete:response';
   static const String taskError = 'task:error';
+
+  // -- Push notifications (desktop -> mobile, data-changed) --
+  static const String taskChanged = 'task:changed';
+  static const String sessionChanged = 'session:changed';
 
   // -- Multi-desktop system events from relay --
   static const String systemDesktopList = 'system:desktop_list';

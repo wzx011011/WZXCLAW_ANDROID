@@ -7,7 +7,7 @@ import 'desktop_picker.dart';
 
 /// A thin status bar showing the current WebSocket connection state,
 /// with an optional desktop picker when multiple desktops are available.
-class ConnectionStatusBar extends StatelessWidget {
+class ConnectionStatusBar extends StatefulWidget {
   const ConnectionStatusBar({
     super.key,
     required this.state,
@@ -28,8 +28,18 @@ class ConnectionStatusBar extends StatelessWidget {
   final String? errorMessage;
 
   @override
+  State<ConnectionStatusBar> createState() => _ConnectionStatusBarState();
+}
+
+class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
+  bool _errorExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
+    final state = widget.state;
+    final desktopOnline = widget.desktopOnline;
+    final errorMessage = widget.errorMessage;
     final dotColor = _dotColor(state, desktopOnline);
     final hasError = errorMessage != null &&
         errorMessage!.isNotEmpty &&
@@ -38,8 +48,8 @@ class ConnectionStatusBar extends StatelessWidget {
     // Determine status text
     String statusText;
     if (state == WsConnectionState.connected) {
-      if (desktopIdentity != null) {
-        statusText = '已连接到 $desktopIdentity';
+      if (widget.desktopIdentity != null) {
+        statusText = '已连接到 ${widget.desktopIdentity}';
       } else if (desktopOnline) {
         statusText = '桌面已连接';
       } else {
@@ -50,8 +60,8 @@ class ConnectionStatusBar extends StatelessWidget {
     }
 
     final showPicker = state == WsConnectionState.connected &&
-        desktops.length > 1 &&
-        onDesktopSelect != null;
+        widget.desktops.length > 1 &&
+        widget.onDesktopSelect != null;
 
     return Container(
       width: double.infinity,
@@ -95,14 +105,17 @@ class ConnectionStatusBar extends StatelessWidget {
                         ),
                       ),
                       if (hasError)
-                        Text(
-                          errorMessage!,
-                          style: TextStyle(
-                            color: colors.textMuted,
-                            fontSize: 11,
+                        GestureDetector(
+                          onTap: () => setState(() => _errorExpanded = !_errorExpanded),
+                          child: Text(
+                            errorMessage!,
+                            style: TextStyle(
+                              color: colors.textMuted,
+                              fontSize: 11,
+                            ),
+                            maxLines: _errorExpanded ? null : 1,
+                            overflow: _errorExpanded ? null : TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
@@ -113,9 +126,9 @@ class ConnectionStatusBar extends StatelessWidget {
           // Desktop picker
           if (showPicker)
             DesktopPicker(
-              desktops: desktops,
-              selectedDesktopId: selectedDesktopId,
-              onSelect: onDesktopSelect!,
+              desktops: widget.desktops,
+              selectedDesktopId: widget.selectedDesktopId,
+              onSelect: widget.onDesktopSelect!,
             ),
         ],
       ),

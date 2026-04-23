@@ -258,6 +258,8 @@ class RoomManager {
           entry.identity = {
             name: parsed.data.name || null,
             platform: parsed.data.platform || null,
+            osVersion: parsed.data.osVersion || null,
+            appVersion: parsed.data.appVersion || null,
           };
           log(`Room [${token}]: mobile identity updated (deviceId=${deviceId}, name=${entry.identity.name})`);
           this._sendMobileList(room);
@@ -517,6 +519,8 @@ class RoomManager {
         deviceId,
         name: entry.identity ? entry.identity.name : null,
         platform: entry.identity ? entry.identity.platform : null,
+        osVersion: entry.identity ? entry.identity.osVersion : null,
+        appVersion: entry.identity ? entry.identity.appVersion : null,
         connectedAt: entry.connectedAt,
       });
     }

@@ -5,6 +5,7 @@ import '../models/connection_state.dart';
 import '../models/session_meta.dart';
 import '../models/ws_message.dart';
 import 'chat_database.dart';
+import 'chat_store.dart';
 import 'connection_manager.dart';
 import 'task_service.dart';
 
@@ -150,6 +151,10 @@ class SessionSyncService {
     _sessionsController.add([]);
     _activeSessionController.add(null);
 
+    // Clear chat messages — old task's messages should not be visible.
+    ChatStore.instance.loadFetchedMessages([]);
+    ChatStore.instance.currentSessionId = null;
+
     if (taskId != null &&
         ConnectionManager.instance.state == WsConnectionState.connected &&
         ConnectionManager.instance.desktopOnline) {
@@ -196,6 +201,10 @@ class SessionSyncService {
       case WsEvents.workspaceSwitchResponse:
         _handleWorkspaceSwitchResponse(msg.data);
         break;
+      case WsEvents.sessionChanged:
+        // Desktop pushed a session change — refresh the list
+        fetchSessions();
+        break;
     }
   }
 
@@ -224,6 +233,19 @@ class SessionSyncService {
 
     // Cache to local DB
     ChatDatabase.instance.upsertSessions(sessions);
+
+    // Auto-load the most recent session's messages so the user sees
+    // the latest conversation instead of an empty chat.
+    if (sessions.isNotEmpty) {
+      final latestSession = sessions.first;
+      _activeSessionId = latestSession.id;
+      _activeSessionController.add(_activeSessionId);
+      loadSessionMessages(latestSession.id).then((result) {
+        final messages = result['messages'] as List<ChatMessage>;
+        ChatStore.instance.loadFetchedMessages(messages);
+        ChatStore.instance.currentSessionId = latestSession.id;
+      });
+    }
 
     // Resolve pending request if any
     _completePending(requestId, sessions);
@@ -398,7 +420,10 @@ class SessionSyncService {
     final requestId = _nextRequestId();
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionListRequest,
-      data: {'requestId': requestId},
+      data: {
+        'requestId': requestId,
+        'activeTaskId': TaskService.instance.activeTaskId,
+      },
     ),);
     // Timeout — also clean up pending request
     _pendingRequests[requestId] = Completer<dynamic>();
@@ -461,6 +486,7 @@ class SessionSyncService {
       data: {
         'requestId': requestId,
         'sessionId': sessionId,
+        'activeTaskId': TaskService.instance.activeTaskId,
         'offset': offset,
         'limit': limit,
       },
@@ -496,7 +522,8 @@ class SessionSyncService {
 
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionCreateRequest,
-      data: {'requestId': requestId, if (title != null) 'title': title},
+      data: {'requestId': requestId, if (title != null) 'title': title,
+        'activeTaskId': TaskService.instance.activeTaskId},
     ),);
 
     Future.delayed(const Duration(seconds: 5), () {
@@ -524,7 +551,8 @@ class SessionSyncService {
 
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionDeleteRequest,
-      data: {'requestId': requestId, 'sessionId': sessionId},
+      data: {'requestId': requestId, 'sessionId': sessionId,
+        'activeTaskId': TaskService.instance.activeTaskId},
     ),);
 
     Future.delayed(const Duration(seconds: 5), () {
@@ -552,7 +580,8 @@ class SessionSyncService {
 
     ConnectionManager.instance.send(WsMessage(
       event: WsEvents.sessionRenameRequest,
-      data: {'requestId': requestId, 'sessionId': sessionId, 'title': title},
+      data: {'requestId': requestId, 'sessionId': sessionId, 'title': title,
+        'activeTaskId': TaskService.instance.activeTaskId},
     ),);
 
     Future.delayed(const Duration(seconds: 5), () {

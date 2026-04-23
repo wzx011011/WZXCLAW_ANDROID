@@ -78,9 +78,22 @@ class ChatStore {
   DateTime? _lastErrorTime;
   final Map<String, bool> _pendingMessageIds = {}; // messageId tracking for ack
 
+  // -- Thinking state --
+  String _thinkingContent = '';
+  String get thinkingContent => _thinkingContent;
+
+  // -- Todo state --
+  List<Map<String, String>> _todos = [];
+  List<Map<String, String>> get todos => List.unmodifiable(_todos);
+
+  // -- Permission mode state --
+  String _permissionMode = 'always-ask';
+  String get permissionMode => _permissionMode;
+
   bool get isStreaming => _isStreaming;
   bool get isWaitingForResponse => _isWaitingForResponse;
   String? get currentSessionId => _currentSessionId;
+  set currentSessionId(String? id) => _currentSessionId = id;
   bool get isBrowsingHistory => _isBrowsingHistory;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
@@ -100,9 +113,12 @@ class ChatStore {
   void _handleWsMessage(WsMessage wsMsg) {
     try {
       switch (wsMsg.event) {
-        // -- New stream:agent:* format --
+        // -- stream:agent:* format --
         case WsEvents.agentText:
           _handleAgentText(wsMsg.data);
+          break;
+        case WsEvents.agentThinking:
+          _handleAgentThinking(wsMsg.data);
           break;
         case WsEvents.agentToolCall:
           _handleAgentToolCall(wsMsg.data);
@@ -122,7 +138,9 @@ class ChatStore {
         case WsEvents.agentPermissionRequest:
           _handlePermissionRequest(wsMsg.data);
           break;
-
+        case WsEvents.agentTurnEnd:
+          _handleAgentTurnEnd();
+          break;
         case WsEvents.agentPlanModeEntered:
           _handlePlanModeEntered(wsMsg.data);
           break;
@@ -136,31 +154,19 @@ class ChatStore {
           _handleAskUserQuestion(wsMsg.data);
           break;
 
-        // -- Legacy format (backward compat) --
-        case WsEvents.streamTextDelta:
-          _handleAgentText(wsMsg.data);
-          break;
-        case WsEvents.streamToolUseStart:
-          _handleLegacyToolUseStart(wsMsg.data);
-          break;
-        case WsEvents.streamDone:
-          _handleAgentDone(wsMsg.data);
-          break;
-        case WsEvents.streamError:
-          _handleAgentError(wsMsg.data);
-          break;
-
-        // -- Message-level events --
-        case WsEvents.messageAssistant:
-          _handleAssistantMessage(wsMsg.data);
-          break;
-        case WsEvents.messageUser:
-          break; // Echo of our own message
-        case WsEvents.sessionMessages:
-          _handleSessionMessages(wsMsg.data);
-          break;
+        // -- Command ack --
         case WsEvents.commandAck:
           _handleCommandAck(wsMsg.data);
+          break;
+
+        // -- Todo updated --
+        case WsEvents.todoUpdated:
+          _handleTodoUpdated(wsMsg.data);
+          break;
+
+        // -- Permission mode --
+        case WsEvents.permissionModeResponse:
+          _handlePermissionModeResponse(wsMsg.data);
           break;
       }
     } catch (e) {
@@ -359,6 +365,19 @@ class ChatStore {
     }
   }
 
+  // ── stream:agent:thinking ─────────────────────────────────────────
+  void _handleAgentThinking(dynamic data) {
+    final content = data is Map ? data['content'] as String? ?? '' : data?.toString() ?? '';
+    _thinkingContent += content;
+    _notifyListeners();
+  }
+
+  // ── stream:agent:turn_end ─────────────────────────────────────────
+  void _handleAgentTurnEnd() {
+    _thinkingContent = '';
+    _notifyListeners();
+  }
+
   /// Send a permission response back to the desktop.
   void respondToPermission(String toolCallId, bool approved) {
     ConnectionManager.instance.send(WsMessage(
@@ -449,69 +468,48 @@ class ChatStore {
     }
   }
 
-  // ── Legacy: stream:tool_use_start ──────────────────────────────────
-  void _handleLegacyToolUseStart(dynamic data) {
-    _finalizeStreamingMessage();
-
-    final toolName = data is Map ? data['name'] as String? : data.toString();
-    final toolMsg = ChatMessage(
-      role: MessageRole.tool,
-      content: toolName ?? 'Unknown',
-      toolName: toolName,
-      toolStatus: ToolCallStatus.running,
-      createdAt: DateTime.now(),
-    );
-    _messages.add(toolMsg);
-    ChatDatabase.instance.insertMessage(toolMsg);
+  // ── todo:updated ────────────────────────────────────────────────────
+  void _handleTodoUpdated(dynamic data) {
+    if (data is! Map) return;
+    final todosList = data['todos'] as List<dynamic>?;
+    if (todosList == null) return;
+    _todos = todosList.map((t) {
+      final m = t is Map<String, dynamic> ? t : <String, dynamic>{};
+      return {
+        'content': m['content'] as String? ?? '',
+        'status': m['status'] as String? ?? 'pending',
+        'activeForm': m['activeForm'] as String? ?? '',
+      };
+    }).toList();
     _notifyListeners();
   }
 
-  // ── message:assistant ──────────────────────────────────────────────
-  void _handleAssistantMessage(dynamic data) {
-    if (_isStreaming) return;
-    final content = _extractContent(data);
-    if (content.isEmpty) return;
-    final msg = ChatMessage(
-      role: MessageRole.assistant,
-      content: content,
-      createdAt: DateTime.now(),
-    );
-    _messages.add(msg);
-    ChatDatabase.instance.insertMessage(msg);
+  // ── permission:mode:response ───────────────────────────────────────
+  void _handlePermissionModeResponse(dynamic data) {
+    if (data is! Map) return;
+    final mode = data['mode'] as String? ?? 'always-ask';
+    _permissionMode = mode;
     _notifyListeners();
   }
 
-  // ── session:messages ───────────────────────────────────────────────
-  void _handleSessionMessages(dynamic data) {
-    // Support both Map (with sessionId + messages) and plain List formats.
-    List<dynamic>? messagesList;
-    if (data is Map) {
-      final sessionId = data['sessionId'] as String?;
-      if (sessionId != null && sessionId != _currentSessionId) return;
-      messagesList = data['messages'] as List<dynamic>?;
-    } else if (data is List) {
-      messagesList = data;
-    }
-    if (messagesList == null) return;
+  /// Request current permission mode from desktop.
+  void requestPermissionMode() {
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.permissionGetModeRequest,
+      data: {'requestId': '${DateTime.now().millisecondsSinceEpoch}'},
+    ));
+  }
 
-    _messages.clear();
-    _streamingMessage = null;
-    _isStreaming = false;
-    ChatDatabase.instance.clearSessionMessages(_currentSessionId ?? '');
-    for (final item in messagesList) {
-      if (item is! Map) continue;
-      final role =
-          item['role'] == 'user' ? MessageRole.user : MessageRole.assistant;
-      final content = item['content'] as String? ?? '';
-      if (content.isEmpty) continue;
-      final msg = ChatMessage(
-        role: role,
-        content: content,
-        createdAt: DateTime.now(),
-      );
-      _messages.add(msg);
-      ChatDatabase.instance.insertMessage(msg);
-    }
+  /// Set permission mode on desktop.
+  void setPermissionMode(String mode) {
+    ConnectionManager.instance.send(WsMessage(
+      event: WsEvents.permissionSetModeRequest,
+      data: {
+        'requestId': '${DateTime.now().millisecondsSinceEpoch}',
+        'mode': mode,
+      },
+    ));
+    _permissionMode = mode;
     _notifyListeners();
   }
 
